@@ -63,3 +63,12 @@ export {
   type LinkRole,
   type EntryDraft,
 } from "./roster.js";
+export { E2EChannel, E2EError, type E2EOptions, type ReceiveResult, type WireKind, type WireOut } from "./e2e.js";
+export {
+  ClientFrameSchema,
+  ServerFrameSchema,
+  WIRE_KINDS,
+  relayAuthPayload,
+  type ClientFrame,
+  type ServerFrame,
+} from "./relay-wire.js";

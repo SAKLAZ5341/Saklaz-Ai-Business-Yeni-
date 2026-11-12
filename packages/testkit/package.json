@@ -1,0 +1,13 @@
+{
+  "name": "@saklaz/testkit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "YALNIZCA TEST: Android uygulamasının protokol davranışını taklit eden telefon simülatörü. Üretim koduna dahil edilmez.",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" },
+  "dependencies": {
+    "@saklaz/crypto": "workspace:*",
+    "@saklaz/protocol": "workspace:*"
+  }
+}

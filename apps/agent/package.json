@@ -1,0 +1,25 @@
+{
+  "name": "@saklaz/agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SAKLAZ AI Windows ajanı — güvenlik çekirdeği (Sprint 2): şifreli yerel depo, denetim zinciri, geri yükleme koruması, acil kilit, gelen kutusu, uçtan uca kanal, relay istemcisi.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@saklaz/crypto": "workspace:*",
+    "@saklaz/protocol": "workspace:*",
+    "better-sqlite3-multiple-ciphers": "12.11.1",
+    "ws": "8.22.2"
+  },
+  "devDependencies": {
+    "@saklaz/testkit": "workspace:*",
+    "@types/better-sqlite3": "7.6.13",
+    "@types/ws": "8.18.2"
+  }
+}

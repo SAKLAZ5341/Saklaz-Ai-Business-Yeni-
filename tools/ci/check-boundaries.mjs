@@ -6,6 +6,8 @@ import { join, relative } from "node:path";
 
 const root = new URL("../..", import.meta.url).pathname;
 const forbidden = /from\s+["']@saklaz\/erp-|import\(\s*["']@saklaz\/erp-|require\(\s*["']@saklaz\/erp-/;
+// Test simülatörü (@saklaz/testkit) üretim kaynak koduna (apps/*/src, packages/*/src) girmemeli.
+const testkitImport = /from\s+["']@saklaz\/testkit["']|import\(\s*["']@saklaz\/testkit["']/;
 const scanDirs = ["apps", "packages"];
 const violations = [];
 
@@ -19,11 +21,16 @@ function walk(dir) {
       walk(p);
     } else if (/\.(c|m)?(t|j)sx?$/.test(name)) {
       const text = readFileSync(p, "utf8");
-      if (forbidden.test(text)) violations.push(relative(root, p));
+      const rel = relative(root, p);
+      if (forbidden.test(text)) violations.push(rel);
+      if (/\/src\//.test(rel) && !rel.startsWith("packages/testkit/") && testkitImport.test(text)) {
+        violations.push(`${rel} (üretim kodunda test simülatörü)`);
+      }
     } else if (name === "package.json") {
       const pkg = JSON.parse(readFileSync(p, "utf8"));
       const deps = { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.peerDependencies };
       for (const d of Object.keys(deps)) if (d.startsWith("@saklaz/erp-")) violations.push(`${relative(root, p)} -> ${d}`);
+      if (pkg.dependencies && "@saklaz/testkit" in pkg.dependencies) violations.push(`${relative(root, p)} -> @saklaz/testkit (yalnızca devDependency olabilir)`);
     }
   }
 }
@@ -33,7 +40,7 @@ for (const d of scanDirs) {
 }
 
 if (violations.length) {
-  console.error("ERP bağımlılık kuralı ihlali (MVP, ASEDEN'den bağımsız olmalı):");
+  console.error("Sınır kuralı ihlali (ERP bağımsızlığı veya test simülatörünün üretim koduna girmesi):");
   for (const v of violations) console.error("  - " + v);
   process.exit(1);
 }

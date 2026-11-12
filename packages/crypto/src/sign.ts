@@ -22,6 +22,9 @@ export const SIGNATURE_DOMAINS = [
   // v0.3 (ADR-0014, ADR-0015): imzalı cihaz listesi ve kurtarma
   "SAKLAZ-v1/roster",
   "SAKLAZ-v1/recovery",
+  // Sprint 2: cihazın relay'e bağlanırken anahtar sahipliğini kanıtladığı meydan okuma imzası.
+  // Komut veya liste imzalarıyla karıştırılamaması için ayrı alan.
+  "SAKLAZ-v1/relay-auth",
 ] as const;
 export type SignatureDomain = (typeof SIGNATURE_DOMAINS)[number];
 
