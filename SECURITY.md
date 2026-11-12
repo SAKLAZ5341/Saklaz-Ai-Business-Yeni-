@@ -278,29 +278,29 @@ ciphertext içi (yalnızca cihazlar görür):
 
 | # | Kontrol | Faz | Durum |
 |---|---|---|---|
-| S1 | Argon2id + TOTP MFA + token rotasyonu | 1 | ⬜ |
-| S2 | QR + SAS ile relay'den bağımsız eşleştirme; ortadaki adam (MITM) testi | 1 | ⬜ |
-| S3 | Noise_KK E2EE; relay'in düz metin görmediğinin testi | 1 | 🟨 Noise_KK resmî vektörle doğrulandı (Sprint 1). Relay üzerinden düz metin testi Sprint 2'de. |
-| S4 | Yalnız imzalı komut kabulü; relay kaynaklı komut reddi testi | 1 | 🟨 Protokol düzeyinde uygulandı ve testli (Sprint 1). Ajan entegrasyonu Sprint 2–3'te. |
-| S5 | Replay koruması (sayaç, zaman, nonce) | 1 | 🟨 Kayan pencereli sayaç ve imzalı ömür testli (Sprint 1). Kalıcı depo (SQLite) Sprint 2'de. |
+| S1 | Argon2id + TOTP MFA + token rotasyonu | 1 | 🟨 Relay'de uygulandı ve gerçek PostgreSQL ile testli (Sprint 2). TOTP tekrar kullanım koruması eksik (Sprint 3). |
+| S2 | QR + SAS ile relay'den bağımsız eşleştirme; ortadaki adam (MITM) testi | 1 | 🟨 Ajan tarafı + telefon simülatörüyle relay üzerinden testli (Sprint 2). Android ve attestation Sprint 4'te. |
+| S3 | Noise_KK E2EE; relay'in düz metin görmediğinin testi | 1 | 🟨 Resmî vektör (Sprint 1). Gerçek relay ve PostgreSQL kuyruğunda düz metin bulunmadığı testli (Sprint 2). GitHub CI'da henüz çalışmadı. |
+| S4 | Yalnız imzalı komut kabulü; relay kaynaklı komut reddi testi | 1 | 🟨 Ajanda ve gerçek relay üzerinden testli; 146.928 mutasyonun hiçbiri kabul edilmedi (Sprint 2). GitHub CI'da henüz çalışmadı. |
+| S5 | Replay koruması (sayaç, zaman, nonce) | 1 | 🟨 Kalıcı depo (SQLCipher) ve yeniden başlatma sonrası testli (Sprint 2). GitHub CI'da henüz çalışmadı. |
 | S6 | İmzalı onay + özet + süre + tek kullanım | 1 | 🟨 Protokol düzeyinde testli (Sprint 1). Telefon UI'ı ve araç entegrasyonu Sprint 3–4'te. |
-| S7 | Ajanın hiçbir port dinlememesi (port tarama testi) | 1 | ⬜ |
+| S7 | Ajanın hiçbir port dinlememesi (port tarama testi) | 1 | ⬜ Ajan yalnızca giden WSS kullanıyor; port tarama testi Sprint 5'te. |
 | S8 | Klasör allowlist ve yol hileleri test seti | 1 | ⬜ |
 | S9 | DataGuard; `confidential` verinin dış sağlayıcıya gidememesi | 1 | ⬜ |
-| S10 | Hash zincirli denetim kayıtları ve doğrulayıcı | 1 | ⬜ |
+| S10 | Hash zincirli denetim kayıtları ve doğrulayıcı | 1 | 🟨 Ajan (SQLCipher) ve relay'de (yalnızca ekleme tetikleyicisi) testli (Sprint 2). İmzalı zincir başının telefona gönderimi Sprint 4'te. |
 | S11 | Prompt injection regresyon paketi | 1 | ⬜ |
 | S12 | Electron güvenlik ayarları testi | 1 | ⬜ |
 | S13 | Çapraz platform kripto test vektörleri (TS ↔ Dart) | 1 | 🟨 TS tarafı ve sapma testi hazır. **Dart testi yazıldı, henüz çalıştırılmadı.** |
 | S14 | İmzalı güncelleme doğrulaması | 1 | ⬜ |
 | S15 | ERP connector'da SELECT dışı ifade reddi ve salt okunur işlem | 2 | ⬜ |
 | S16 | Ele geçirilmiş relay senaryosu entegrasyon testi | 1 | 🟨 Protokol düzeyi sahtecilik testleri hazır (Sprint 1). Gerçek relay ile entegrasyon testi Sprint 5'te. |
-| S17 | Çalışma alanı izolasyonu: başka alanın imzası, başlığı veya onayı reddedilir | 2 | ⬜ |
-| S18 | İmzalı cihaz listesi: zincir doğrulama, sahte veya sırası bozuk giriş reddi, çatallanma tespiti | 2 | ⬜ |
-| S19 | İptal edilmiş cihaz kimliği ve anahtarlarının yeniden kabul edilmemesi | 2 | ⬜ |
-| S20 | Geri yükleme (rollback) koruması: eski yedek sonrası tekrar oynatma reddi | 2 | ⬜ |
-| S21 | Kuyruktaki acil kilidin diğer mesajlardan önce uygulanması; kilidin yalnızca yerelde açılması | 2 | ⬜ |
+| S17 | Çalışma alanı izolasyonu: başka alanın imzası, başlığı veya onayı reddedilir | 2 | 🟨 Protokol ve ajan düzeyinde testli. İki ayrı relay kurulumu ve telefonda iki alan Sprint 4–5'te. |
+| S18 | İmzalı cihaz listesi: zincir doğrulama, sahte veya sırası bozuk giriş reddi, çatallanma tespiti | 2 | 🟨 Protokol, ajan ve uçtan uca testli (Sprint 2). GitHub CI'da henüz çalışmadı. |
+| S19 | İptal edilmiş cihaz kimliği ve anahtarlarının yeniden kabul edilmemesi | 2 | 🟨 Testli (Sprint 2). GitHub CI'da henüz çalışmadı. |
+| S20 | Geri yükleme (rollback) koruması: eski yedek sonrası tekrar oynatma reddi | 2 | 🟨 Gerçek veritabanı dosyasının geri yüklenmesiyle testli. Windows'ta DPAPI kasasıyla doğrulanmadı (Sprint 3). |
+| S21 | Kuyruktaki acil kilidin diğer mesajlardan önce uygulanması; kilidin yalnızca yerelde açılması | 2 | 🟨 Ajan ve gerçek relay ile testli. Windows Hello ile yerel açma Sprint 4'te. |
 | S22 | Kurtarma: zaman kilidi, yerel veto, geriye tarihlenmiş isteğin etkisizliği. **Bağımsız güvenlik testi şartı.** | 6 | ⬜ |
-| S23 | Sunucunun mesaj geciktirme/engelleme senaryoları: etkiler ölçülür ve raporlanır | 2–5 | ⬜ |
+| S23 | Sunucunun mesaj geciktirme/engelleme senaryoları: etkiler ölçülür ve raporlanır | 2–5 | 🟨 Altı senaryo testli ve raporlandı (SPRINT-2-RAPOR §6). Yük altında ölçüm Sprint 5'te. |
 
 ## 16. Açık Bildirimi
 

@@ -72,8 +72,8 @@
 | Sprint | Süre | Durum | Rapor |
 |---|---|---|---|
 | S1 — Temel ve kripto | 2 hf | 🟨 Tamamlandı; Dart testi ve GitHub CI bekliyor | [SPRINT-1-RAPOR.md](docs/sprints/SPRINT-1-RAPOR.md) |
-| S2 — Relay, eşleştirme, cihaz listesi, ajan güvenlik çekirdeği | 3 hf | 🟨 Devam ediyor | — |
-| S3 — Ajan çekirdeği ve araçlar | 2 hf | ⬜ | — |
+| S2 — Relay, eşleştirme, cihaz listesi, ajan güvenlik çekirdeği | 3 hf | 🟨 Tamamlandı; DPAPI, Dart, Docker ve GitHub CI bekliyor | [SPRINT-2-RAPOR.md](docs/sprints/SPRINT-2-RAPOR.md) |
+| S3 — Ajan çekirdeği ve araçlar | 2 hf | ⏸ Proje sahibinin onayını bekliyor | — |
 | S4 — Android (PERSONAL/BUSINESS) ve masaüstü | 3 hf | ⬜ | — |
 | S5 — Sağlamlaştırma ve iki relay kurulumu | 2 hf | ⬜ | — |
 | S6 — Kurtarma (bağımsız güvenlik testi şartlı) | 1 hf | ⬜ | — |

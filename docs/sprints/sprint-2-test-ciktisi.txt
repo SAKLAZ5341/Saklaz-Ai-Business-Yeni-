@@ -1,0 +1,77 @@
+SAKLAZ AI — Sprint 2 test çıktısı
+Tarih: 2026-11-12T18:25Z  Commit tabanı: b5310a8
+Node v22.23.4, pnpm 10.28.0, PostgreSQL 16 (yerel geçici küme), PowerShell 7.4.6, Pester 5.7.1, gitleaks 8.28.0
+
+== Temiz kurulum ==
+Done in 1.1s using pnpm v10.28.0
+
+== Lint ==
+eslint: 0 hata
+
+== Sınır kontrolü (ERP bağımsızlığı + test simülatörü üretimde yok) ==
+Sınır kontrolü: OK (ERP bağımlılığı yok)
+
+== Tip denetimi ==
+packages/crypto: OK
+packages/protocol: OK
+packages/testkit: OK
+apps/agent: OK
+apps/relay: OK
+
+== packages/crypto testleri ==
+ ✓ test/primitives.test.ts (14 tests) 100ms
+ ✓ test/noise.test.ts (10 tests) 41ms
+ ✓ test/sealed-pairing.test.ts (6 tests) 26ms
+ ✓ test/edge-cases.test.ts (4 tests) 10ms
+ Test Files  4 passed (4)
+      Tests  34 passed (34)
+Statements   : 99.63% ( 540/542 )
+Branches     : 95.59% ( 152/159 )
+Functions    : 100% ( 65/65 )
+Lines        : 99.63% ( 540/542 )
+
+== packages/protocol testleri ==
+ ✓ test/roster.test.ts (19 tests) 537ms
+ ✓ test/verifier.test.ts (16 tests) 262ms
+ ✓ test/approval.test.ts (12 tests) 43ms
+ ✓ test/e2e.test.ts (10 tests) 49ms
+ ✓ test/message.test.ts (9 tests) 25ms
+ ✓ test/verifier-v03.test.ts (9 tests) 87ms
+ ✓ test/vectors.test.ts (7 tests) 35ms
+ ✓ test/jcs.test.ts (6 tests) 30ms
+ Test Files  8 passed (8)
+      Tests  88 passed (88)
+Statements   : 98.88% ( 1064/1076 )
+Branches     : 96.33% ( 342/355 )
+Functions    : 100% ( 77/77 )
+Lines        : 98.88% ( 1064/1076 )
+
+== apps/agent testleri ==
+ ✓ test/agent.test.ts (17 tests) 601ms
+ ✓ test/transport.test.ts (6 tests) 520ms
+ Test Files  2 passed (2)
+      Tests  23 passed (23)
+Statements   : 93.93% ( 682/726 )
+Branches     : 86.06% ( 210/244 )
+Functions    : 90.69% ( 78/86 )
+Lines        : 93.93% ( 682/726 )
+
+== apps/relay testleri ==
+ ✓ test/e2e.test.ts (3 tests) 4802ms
+ ✓ test/relay.test.ts (18 tests) 3423ms
+ Test Files  2 passed (2)
+      Tests  21 passed (21)
+Statements   : 86.12% ( 509/591 )
+Branches     : 79.31% ( 161/203 )
+Functions    : 93.18% ( 41/44 )
+Lines        : 86.12% ( 509/591 )
+
+== Doğrulayıcı kapsamlı mutasyon testi (v0.3, ayrı çalıştırma) ==
+RESULT mutations=146928 accepted_changed=0 untyped_errors=0
+
+== Pester (Linux PowerShell) ==
+Tests Passed: 7, Failed: 0, Skipped: 1, Inconclusive: 0, NotRun: 0
+
+== gitleaks ==
+9:26PM INF 10 commits scanned.
+9:26PM INF no leaks found
