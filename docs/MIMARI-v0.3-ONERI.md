@@ -1,7 +1,7 @@
 # Mimari Güncelleme Önerisi v0.3 — Çok Cihazlı, Her Yerden Erişilebilir Platform
 
 > **Tarih:** 2026-11-12
-> **Durum:** Öneri. **Kod değişikliği yapılmadı.** Proje sahibinin onayını bekliyor.
+> **Durum:** **Kabul edildi** (proje sahibi, 2026-11-12; A seçeneği). ARCHITECTURE.md ve SECURITY.md v0.3'e işlendi. Bu belgedeki güvenlik ifadeleri, SECURITY.md §0'daki varsayımlar altında geçerlidir.
 > **Temel:** ARCHITECTURE.md v0.2, SECURITY.md v0.2, FAZ1-PLAN.md, Sprint 1 kodu
 
 ## 0. Özet
@@ -117,7 +117,7 @@ Giriş 3: iptal { cihaz: telefon-2, neden: "kayboldu" }                    imza:
 
 ### 2.4 Y4 — Çalışma Alanları Arası Denetimli Aktarım
 
-**Varsayılan davranış:** Alanlar arası aktarım **imkânsızdır.** Bu özellik yapılana kadar iki alan arasında veri akışı için teknik bir yol yoktur; bu da en güvenli başlangıç durumudur.
+**Varsayılan davranış:** Faz 1'de alanlar arası aktarım özelliği **bulunmaz.** Yazılımda iki alan arasında veri taşıyan bir yol yoktur; bu da en güvenli başlangıç durumudur.
 
 Özellik eklendiğinde aktarım şu şekilde işler:
 
@@ -214,9 +214,9 @@ Mevcut tasarımda Authenticode + çevrimdışı Ed25519 manifest vardı (KOD-IMZ
 
 ## 3. Güvenlik Değerlendirmesi
 
-### 3.1 Sunucu ele geçirilirse — istediğiniz beş garanti
+### 3.1 Sunucu ele geçirilirse — istediğiniz beş hedef (SECURITY.md §0 varsayımları altında)
 
-| Garanti | Sağlanıyor mu? | Mekanizma | Durum |
+| Hedef | Tasarımda karşılanıyor mu? | Mekanizma | Durum |
 |---|---|---|---|
 | **Dosyalar okunamamalı** | ✅ | Uçtan uca şifreleme; anahtarlar yalnızca cihazlarda. Relay yalnızca şifreli metin görür. | Noise_KK Sprint 1'de doğrulandı |
 | **Komut üretilememeli** | ✅ | Her komut telefon anahtarıyla imzalı; sunucunun anahtarı yok | Sprint 1'de testli (sahte imza, sahte gönderen) |
@@ -308,7 +308,7 @@ Güvenlik çekirdeği yeniden yazılmıyor. Gerekenler yalnızca **eklemeler**:
 | T7 | Kişisel relay'in barındırılması (evde dinamik IP ve NAT; ya da VPS işletimi) | Orta | Orta | Önerim: sizin adınıza küçük bir VPS. Ev sunucusu da mümkün ama 443 yönlendirmesi ve dinamik DNS gerektirir. |
 | T8 | Geri yüklemede tekrar oynatma | Düşük | Yüksek | §2.5.4 önlemi; özel test senaryosu yazılacak |
 | T9 | Kapsam büyümesi | Orta | Orta | Alanlar arası aktarım Faz 2'ye ertelendi; P2P ertelendi |
-| T10 | Kurumsal BT'nin kişisel alana erişim talebi | Düşük | Yüksek | Ayrı relay, ayrı anahtar ve ayrı kurulum: teknik olarak erişim imkânsızdır |
+| T10 | Kurumsal BT'nin kişisel alana erişim talebi | Düşük | Yüksek | Ayrı relay, ayrı anahtar ve ayrı kurulum: tasarımda kurumsal tarafın kişisel alana erişim yolu bulunmaz (V1–V4 varsayımları altında) |
 
 ## 8. Kararınız Gereken Konular
 

@@ -68,7 +68,7 @@ WSS (relay) ──► transport ──► crypto (Noise çözme) ──► verif
 |---|---|
 | `transport` | Giden WSS bağlantısı, heartbeat, yeniden bağlanma, outbox ve inbox. |
 | `crypto` | Noise oturumları, mühürlü zarflar, dosya parçası şifreleme. |
-| `verifier` | Sıralama §4.4'te. Bu katmanı geçmeyen mesaj router'a **hiçbir koşulda** ulaşamaz. |
+| `verifier` | Sıralama §4.4'te. Bu katmanı geçmeyen mesajın router'a ulaşmaması tasarım gereğidir ve testle doğrulanır. |
 | `router` | Mesaj tipine göre yönlendirir: komut, iptal, onay, geçmiş sorgusu, dosya talebi. |
 | `orchestrator` | Komutu plana çevirir. AI yoksa RuleEngine, varsa yerel model kullanır. Planı adım adım çalıştırır. |
 | `policy` | Her adım için şu kararı verir: izin ver, onay iste veya reddet. Model değil, bu katman karar verir. |
@@ -366,7 +366,7 @@ ct  = XChaCha20-Poly1305(k, nonce, innerMessage(imzalı))
 | **Relay hesabı ve organizasyon rolü** | Relay yöneticisi | Relay'e bağlanma, cihaz kaydı, organizasyon ayarları. **Ajana komut yetkisi vermez.** |
 | **Cihaz rolü (ajan üzerinde)** | Windows'taki yerel kullanıcı, eşleştirme sırasında | Ajana hangi komutların gönderilebileceği, kimin onay verebileceği. |
 
-Bu ayrım bilinçlidir. Relay yöneticisi veya relay'i ele geçiren biri, yalnızca relay'deki yetkiyle ajan üzerinde hiçbir şey yapamaz.
+Bu ayrım bilinçlidir. Relay yöneticisi veya relay'i ele geçiren biri, yalnızca relay'deki yetkiyle ajan üzerinde işlem yaptıramayacak şekilde tasarlanmıştır (SECURITY.md §0 varsayımları altında).
 
 ### 6.2 Cihaz rolleri ve izinler
 
@@ -630,17 +630,31 @@ Kurtarma prosedürleri (relay yeniden kurulumu, ajan geri yüklemesi, telefon ka
 
 **Bağımsızlık güvencesi:** MVP'nin bağımlılık grafiğinde ERP paketleri yoktur. CI'da bir kural bunu zorunlu kılar: `apps/*` paketleri `erp-*` paketlerini Faz 2'ye kadar içe aktaramaz.
 
-## 13. İş Planı (5 sprint × 2 hafta ≈ 10 hafta)
+## 13. İş Planı — v0.3 (6 sprint ≈ 13 hafta)
 
-| Sprint | Odak | Teslim edilenler | Bitiş ölçütü |
-|---|---|---|---|
-| **S1** | Temel ve kripto | Monorepo, CI kapıları, `protocol` (şemalar, JCS), `crypto` (imza, mühürlü zarf, Noise_KK, SAS). Dart libsodium uyumluluk spike'ı. Envanter betiği Pester testi. ADR-0007/0008. | TS ↔ Dart test vektörleri yeşil |
-| **S2** | Relay ve eşleştirme | Relay: hesap, MFA, cihaz kaydı, WSS yönlendirme, kuyruk, presence. Docker Compose. Ajan: transport, verifier, store, audit. Eşleştirme (ajan + TS test istemcisi). | Simüle telefonla eşleştirme ve imzalı ping-pong; S2–S5 testleri |
-| **S3** | Ajan çekirdeği ve araçlar | Orkestratör, politika motoru, yetenek ve klasör izinleri, worker havuzu, Faz 1 araçları, RuleEngine, DataGuard, Ollama adaptörü (opsiyonel). Excel ve Raporlama ile Kişisel Asistan ajanları. | Simüle telefondan "Excel özetle" uçtan uca çalışır; S6–S11 testleri |
-| **S4** | Android ve masaüstü | Flutter: giriş, MFA, eşleştirme (QR, SAS, attestation), komut, geçmiş, onay (biyometrik), push, dosya görüntüleme. Electron: tüm Faz 1 ekranları. | Gerçek telefon ve gerçek Windows ile uçtan uca |
-| **S5** | Sağlamlaştırma | Ele geçirilmiş relay düzeneği (S16), fuzz testleri, performans ölçümleri, kesinti senaryoları, yedekleme ve geri yükleme provası, runbook'lar, kod imzalama, şirket içi VM'ye ilk kurulum (IT ile). | ROADMAP Faz 1 çıkış kriterlerinin tamamı |
+> 2026-11-12: Proje sahibi, mimari v0.3'ü (A seçeneği) onayladı. Önceki 10 haftalık planın yerini alır.
 
-**Ara gösterimler:** Her sprint sonunda size bir gösterim ve kısa rapor sunulur. Rapor şunları içerir: ne çalışıyor, ne çalışmıyor, sonraki sprintte ne var. Hiçbir sprint raporunda çalışmayan bir şey "tamamlandı" olarak gösterilmez.
+| Sprint | Süre | Odak | Teslim edilenler | Bitiş ölçütü |
+|---|---|---|---|---|
+| **S1** ✅* | 2 hf | Temel ve kripto | Monorepo, CI, `crypto` (Noise_KK, mühürlü zarf, SAS), `protocol` (JCS, şemalar, imzalı mesaj, işleme bağlı onay, replay) | *Dart vektörleri ve GitHub CI bekliyor (Sprint 1 raporu) |
+| **S2** | **3 hf** | Relay, eşleştirme, cihaz listesi, ajan güvenlik çekirdeği | Protokol: `ws`/`rh` başlığı, `roster.ts` (genesis, ekleme+eş-imza, iptal+anahtar yasağı, telefon–bilgisayar bağları, çatallanma tespiti). Relay: hesap+TOTP, cihaz kimlik doğrulama, şifreli yönlendirme, süreli kuyruk, presence, meta denetim, Docker Compose. Ajan: SQLCipher depolar, hash zincirli denetim, **rollback koruması**, **acil kilit** (kuyruktan ilk iş), iptal, gelen kutusu, transport. Uçtan uca: eşleştirme → liste → imzalı komut → ack. | S2–S5, S17–S21 testleri; "relay'de düz metin yok" testi; gecikme/engelleme senaryoları (S23) raporlanmış |
+| **S3** | 2 hf | Ajan çekirdeği ve araçlar | Orkestratör, politika motoru, yetenekler ve klasör izinleri, worker havuzu, Faz 1 araçları, RuleEngine, DataGuard, Excel/Raporlama ve Kişisel Asistan ajanları, DPAPI kasası (Windows CI'da) | Simüle telefondan "Excel özetle" uçtan uca; S6–S11 |
+| **S4** | **3 hf** | Android ve masaüstü | Flutter: **PERSONAL/BUSINESS alanları** (ayrı anahtar setleri, ayrı DB, ayrı FCM, renk/isim ayrımı, MDM uyumu), eşleştirme (QR, SAS, attestation), komut, geçmiş, biyometrik onay, push. Electron: Faz 1 ekranları, ACİL DURDUR. | Gerçek telefon + gerçek Windows uçtan uca, iki alan ayrı |
+| **S5** | 2 hf | Sağlamlaştırma ve kurulum | Ele geçirilmiş relay düzeneği (S16, S23), fuzz, performans ölçümü, kesinti senaryoları, kod imzalama + imzalı güncelleme doğrulaması (S14), **iki relay kurulumu** (kişisel VPS + şirket DMZ) | Faz 1 çıkış kriterleri (kurtarma hariç) |
+| **S6** | 1 hf | Kurtarma | Yedek cihaz akışı, kağıt kurtarma ifadesi, 72 saat zaman kilidi + yerel veto, şifreli veri yedeği, geri yükleme provası; **bağımsız güvenlik testine teslim paketi** | S22 iç testleri; bağımsız test planlanmış |
+
+**Toplam:** ≈ 13 hafta. Kurtarma mekanizması, bağımsız güvenlik testi sonuçlanmadan üretim kullanımına açılmaz (proje sahibi şartı).
+
+**Ara gösterimler:** Her sprint sonunda rapor sunulur. Raporda ayrı başlıklar altında şunlar bulunur:
+
+- Çalışan özellikler
+- Testler
+- Güvenlik açıkları
+- Eksikler
+- **Gerçek cihazlarda doğrulanmamış konular**
+- Sunucunun mesajları geciktirmesi veya engellemesiyle ilgili gözlemler
+
+Hiçbir raporda çalışmayan bir özellik "tamamlandı" olarak gösterilmez.
 
 ## 14. Faz 1 Başlamadan Gereken Hazırlıklar
 
@@ -671,7 +685,7 @@ Kurtarma prosedürleri (relay yeniden kurulumu, ajan geri yüklemesi, telefon ka
 |---|---|---|---|
 | 1 | Güvenlik mimarisinden taviz yok | ADR 0001–0012; her sapma ADR ile kayda geçer | Sürekli |
 | 2 | Her uzaktan komut telefonda imzalı | `IncomingVerifier`: imzasız veya yanlış imzalı mesaj reddedilir | Sprint 1'de protokol düzeyinde testli |
-| 3 | Sunucu hiçbir koşulda kendi başına araç veya komut çalıştıramaz | Relay'in imza anahtarı yok. Kontrol mesajları ayrı şemada; "ele geçirilmiş relay" testleri yazıldı | Sprint 1'de protokol testli; S16 entegrasyon testi Sprint 5'te |
+| 3 | Sunucu kendi başına araç veya komut çalıştıramamalı (SECURITY.md §0 varsayımları altında) | Relay'in imza anahtarı yok. Kontrol mesajları ayrı şemada; "ele geçirilmiş relay" testleri yazıldı | Sprint 1'de protokol testli; S16 entegrasyon testi Sprint 5'te |
 | 4–5 | ERP ve şirket dosyaları testte kullanılmaz; yalnızca sentetik veri | §10.4. Test verileri `SAKLAZ-TEST` etiketli; CI'da ERP sınır kontrolü var | Sınır kontrolü Sprint 1'de çalışıyor (negatif testli) |
 | 6 | ASEDEN MVP dışı | `check-boundaries.mjs`, CI'da zorunlu | Sprint 1'de çalışıyor |
 | 7–8 | Sprint sonu test ve rapor; başarısız test gizlenmez | `docs/sprints/SPRINT-n-RAPOR.md`; ✅ yalnızca CI'da geçen testler için kullanılır | Sprint 1 raporu hazır |
@@ -725,3 +739,15 @@ Kurtarma prosedürleri (relay yeniden kurulumu, ajan geri yüklemesi, telefon ka
 |---|---|
 | Sprint 2 | Acil kilit (bağlantı kesme, kalıcı kilit, kuyruktan gelen kilidin ilk iş uygulanması), yerel ve uzaktan cihaz iptali, Dart kripto kütüphanesi kararı (ADR-0008), kod imzalama sağlayıcı kararı |
 | Sprint 4 | Onay ekranı kuralları (§16.2), ACİL DURDUR düğmesi ve kısayolu |
+
+## 17. v0.3 Kararları (proje sahibi, 2026-11-12)
+
+| # | Karar |
+|---|---|
+| D7 | PERSONAL ve BUSINESS alanları ayrı anahtar, ayrı sunucu, ayrı kayıt ve ayrı yetkilerle çalışır. |
+| D8 | PERSONAL relay proje sahibinin kontrolündeki küçük bir VPS'te çalışır; BUSINESS relay şirket içi sunucuda kalır. Sağlayıcı ve maliyet ayrıca onaya sunulacak. |
+| D9 | Yeni cihaz eklemek için QR eşleştirmesi ve donanım destekli biyometrik anahtar gerekir. Biyometri ham verisi hiçbir sunucuya gönderilmez. |
+| D10 | Üç katmanlı kurtarma uygulanır. Yedek cihaz olarak ikinci bir telefon veya tablet kullanılabilir. |
+| D11 | Alanlar arası dosya aktarımı Faz 2'dedir; Faz 1'de bu özellik bulunmaz. |
+| D12 | Tek Android uygulamasında iki alan bulunabilir. Anahtarlar, oturumlar, bildirim içerikleri ve veriler ayrıdır. Şirket politikaları varsa MDM gereksinimleri uygulanır. |
+| D13 | Ek şartlar: rollback koruması; iptal edilmiş anahtarların yeniden kullanılamaması; cihazlar arası güven ilişkilerinin ayrı yönetilmesi; sunucu gecikmesi ve engellemesinin raporlanması; imzalı ve doğrulanmış güncellemeler; kurtarma mekanizmasının bağımsız güvenlik testi; güvenlik iddialarının koşullu dille yazılması. |

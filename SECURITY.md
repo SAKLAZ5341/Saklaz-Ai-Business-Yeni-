@@ -1,18 +1,44 @@
 # SAKLAZ AI — Güvenlik Modeli
 
-> **Sürüm:** v0.2 (Faz 0), 2026-11-12
-> **Durum:** Taslak. Aşağıdaki kontrollerin hiçbiri henüz uygulanmadı. Her kontrol, otomatik testi CI'da geçtiğinde §15'teki tabloda ✅ olarak işaretlenecek.
+> **Sürüm:** v0.3, 2026-11-12 (proje sahibi onayı: çok cihazlı platform, PERSONAL/BUSINESS alanları)
+> **Durum:** Taslak. Kontrollerin durumu §15'teki tabloda; ✅ yalnızca otomatik testi CI'da geçen kontroller içindir.
+> **v0.3 eklemeleri:** §0 (iddiaların dili ve varsayımlar), §17 çalışma alanları, §18 imzalı cihaz listesi, §19 kurtarma, §20 geri yükleme (rollback) koruması, §21 sunucunun mesajları geciktirmesi veya engellemesi, §22 güncelleme doğrulaması.
+
+## 0. Güvenlik İddialarının Dili ve Varsayımlar
+
+Bu belgede hiçbir güvenlik özelliği mutlak veya koşulsuz olarak ifade edilmez. "Sunucu X'i yapamaz" gibi her ifade, aşağıdaki varsayımlar geçerli olduğu sürece ve bugüne kadar yapılan testlerin kapsamı içinde doğrudur. Bir varsayım bozulursa, ilgili iddia da geçersiz sayılmalıdır.
+
+| # | Varsayım | Bozulursa |
+|---|---|---|
+| V1 | Cihaz özel anahtarları cihazdan çıkarılamaz: Android Keystore/StrongBox ve Windows DPAPI beklendiği gibi çalışır. | O cihaz adına imza atılabilir. |
+| V2 | Kullanılan kriptografik yapılar (Ed25519, X25519, ChaCha20-Poly1305, BLAKE2b, Noise) ve libsodium uygulaması güvenlidir. | Tüm iddialar etkilenir. |
+| V3 | **Bizim kodumuz** (Noise durum makinesi, protokol, doğrulama hattı, cihaz listesi) belirtildiği gibi çalışır. Testler bunu desteklemektedir, ancak **bağımsız güvenlik denetimi henüz yapılmamıştır.** | Hatanın türüne göre değişir. |
+| V4 | Uç cihazların (telefon, bilgisayar) işletim sistemi ele geçirilmemiştir. | O cihazın erişebildiği her şey risk altına girer. |
+| V5 | Eşleştirme sırasında kullanıcı QR'ı doğru ekrandan okur ve SAS kodlarını gerçekten karşılaştırır. | Ortadaki adam saldırısı mümkün olabilir. |
+| V6 | Kurtarma ifadesi ve yayın imza anahtarı fiziksel olarak güvenli tutulur. | §19 ve §22'deki önlemlerin bir kısmı aşılabilir. |
+| V7 | Cihaz saatleri makul doğruluktadır (±5 dk). | Mesajlar haksız yere reddedilebilir; güvenlik zayıflamaz. |
+
+**Sürekli kalan riskler** (bu tasarımla ortadan kaldırılmaz, yalnızca sınırlandırılır):
+
+- **Sunucu mesajları geciktirebilir veya hiç iletmeyebilir** (§21).
+- **Meta veri sızabilir:** hangi cihazın ne zaman, ne boyutta mesaj gönderdiği.
+- **Uç cihaz ele geçirilebilir** (V4).
 
 ## 1. Güvenlik Hedefleri
 
+Aşağıdakiler tasarım hedefleridir ve §0'daki varsayımlar altında geçerlidir.
+
 | # | Hedef | Kaynak |
 |---|---|---|
-| G1 | Şirket dosyaları ve ASEDEN verisi izinsiz olarak Windows makinesinden çıkmaz. Hiçbir koşulda düz metin olarak çıkmaz. | K1, K3 |
-| G2 | Relay sunucusu, taşıdığı içeriği okuyamaz. | K2, K4 |
-| G3 | Relay sunucusu tamamen ele geçirilse bile ajana komut çalıştıramaz, onay sahteleyemez ve kritik işlem yaptıramaz. | K5 |
+| G1 | Şirket dosyaları ve ASEDEN verisi izinsiz olarak Windows makinesinden çıkmaz. Ağ üzerinden yalnızca uçtan uca şifreli olarak taşınır. | K1, K3 |
+| G2 | Relay sunucusu, taşıdığı içeriği okuyamayacak biçimde tasarlanmıştır (V1–V3). | K2, K4 |
+| G3 | Relay sunucusu ele geçirilse bile ajana komut çalıştıramaması, onay sahteleyememesi, yetkisiz cihaz ekleyememesi ve kritik işlem yaptıramaması hedeflenir (V1–V3, V5). Sunucunun mesajları geciktirmesi veya engellemesi bu hedefin dışındadır (§21). | K5 |
 | G4 | Her kritik işlem, yetkili kişinin kendi cihazında verdiği ve kriptografik olarak doğrulanan bir onaya dayanır. | K6 |
-| G5 | Canlı ASEDEN verisi hiçbir koşulda değiştirilmez. Keşif yalnızca katalog düzeyindedir. | K8 |
+| G5 | Canlı ASEDEN verisi değiştirilmez: connector'da yazma yolu yoktur, salt okunur rol ve salt okunur işlem kullanılır. Keşif yalnızca katalog düzeyindedir. | K8 |
 | G6 | Her önemli olay inkâr edilemez ve kurcalanması tespit edilebilir biçimde kaydedilir. | — |
+| G7 | PERSONAL ve BUSINESS çalışma alanları arasında anahtar, oturum, kayıt, bildirim içeriği ve veri paylaşılmaz. Alanlar arası aktarım Faz 1'de bulunmaz. | v0.3 |
+| G8 | İptal edilmiş bir cihazın anahtarları ve kimliği tekrar kabul edilmez. | v0.3 |
+| G9 | Eski bir yedeğin geri yüklenmesi, daha önce işlenmiş komutların tekrar çalışmasına yol açmaz. | v0.3 |
 
 ## 2. Korunan Varlıklar
 
@@ -40,16 +66,18 @@ Güvenilmeyen:                 Relay sunucusu, ağ, push servisi (FCM),
 
 ### 3.1 Relay ele geçirilirse
 
-| Saldırganın yapabileceği | Yapamayacağı |
+§0'daki varsayımlar altında:
+
+| Saldırganın yapabileceği | Tasarım gereği yapamaması hedeflenen |
 |---|---|
-| Hizmeti durdurmak (DoS), mesajları geciktirmek veya düşürmek | Mesaj içeriğini okumak (E2EE) |
+| Hizmeti durdurmak (DoS), mesajları geciktirmek veya düşürmek; **bir iptal veya acil kilit mesajını iletmemek** (§21) | Mesaj içeriğini okumak (E2EE) |
 | Meta veriyi görmek: kim, ne zaman, ne boyutta | Ajana komut göndermek (telefon imzası yok) |
 | Eski şifreli mesajları tekrar göndermek | Tekrar gönderimle işlem yaptırmak (sayaç ve nonce reddeder) |
-| Sahte cihaz açık anahtarı yayınlamak | Ajanı buna inandırmak (anahtarlar eşleştirmede sabitlenmiştir) |
+| Sahte cihaz açık anahtarı yayınlamak; cihaz listesinin eski bir sürümünü göstermek | Ajanı buna inandırmak (anahtarlar eşleştirmede sabitlenir ve cihaz listesi sahip imzalıdır, §18). Eski liste, imzalı başlıktaki `rh` alanı sayesinde tespit edilir. |
 | Relay hesap parolalarının hash'lerini çalmak | Bu parolalarla komut vermek (komut için cihaz anahtarı gerekir) |
 | Sahte push bildirimi göndermek | Sahte bildirimle onay almak (onay ekranı içeriği E2EE kanaldan gelir, ajan imzalıdır) |
 
-**Kalan risk:** Hizmet kesintisi ve meta veri sızıntısı. Bunlar kabul edilir ve izlenir. Ayrıca ele geçirilmiş bir relay, yeni bir eşleştirme oturumu başlatmaya çalışabilir. Eşleştirme fiziksel QR ve iki ekranda karşılaştırma gerektirdiğinden bu saldırı başarısız olur (§4).
+**Kalan risk:** Hizmet kesintisi, mesaj geciktirme veya engelleme (§21) ve meta veri sızıntısı. Bunlar ortadan kaldırılamaz; sınırlandırılır ve izlenir. Ayrıca ele geçirilmiş bir relay, yeni bir eşleştirme oturumu başlatmaya çalışabilir. Eşleştirme fiziksel QR ve iki ekranda karşılaştırma gerektirdiğinden bu saldırı başarısız olur (§4).
 
 ### 3.2 Diğer senaryolar
 
@@ -266,7 +294,98 @@ ciphertext içi (yalnızca cihazlar görür):
 | S14 | İmzalı güncelleme doğrulaması | 1 | ⬜ |
 | S15 | ERP connector'da SELECT dışı ifade reddi ve salt okunur işlem | 2 | ⬜ |
 | S16 | Ele geçirilmiş relay senaryosu entegrasyon testi | 1 | 🟨 Protokol düzeyi sahtecilik testleri hazır (Sprint 1). Gerçek relay ile entegrasyon testi Sprint 5'te. |
+| S17 | Çalışma alanı izolasyonu: başka alanın imzası, başlığı veya onayı reddedilir | 2 | ⬜ |
+| S18 | İmzalı cihaz listesi: zincir doğrulama, sahte veya sırası bozuk giriş reddi, çatallanma tespiti | 2 | ⬜ |
+| S19 | İptal edilmiş cihaz kimliği ve anahtarlarının yeniden kabul edilmemesi | 2 | ⬜ |
+| S20 | Geri yükleme (rollback) koruması: eski yedek sonrası tekrar oynatma reddi | 2 | ⬜ |
+| S21 | Kuyruktaki acil kilidin diğer mesajlardan önce uygulanması; kilidin yalnızca yerelde açılması | 2 | ⬜ |
+| S22 | Kurtarma: zaman kilidi, yerel veto, geriye tarihlenmiş isteğin etkisizliği. **Bağımsız güvenlik testi şartı.** | 6 | ⬜ |
+| S23 | Sunucunun mesaj geciktirme/engelleme senaryoları: etkiler ölçülür ve raporlanır | 2–5 | ⬜ |
 
 ## 16. Açık Bildirimi
 
 Güvenlik açıkları herkese açık issue olarak değil, proje sahibine doğrudan ve gizli olarak bildirilir. İletişim kanalını proje sahibi belirleyecek.
+
+## 17. Çalışma Alanları (PERSONAL / BUSINESS)
+
+| Konu | Kural |
+|---|---|
+| Sunucu | Her alanın kendi relay örneği vardır. PERSONAL: proje sahibinin kontrolündeki VPS. BUSINESS: şirket içi DMZ sanal makinesi. |
+| Anahtarlar | Telefon her alan için ayrı komut, onay ve DH anahtarları üretir. Bir alanın anahtarı diğer alanda kayıtlı değildir. |
+| İmzalı başlık | Her mesaj `ws` (alan kimliği) taşır. Ajan, kendi alanına ait olmayan mesajı imzayı kontrol etmeden önce reddeder. Onay özeti de `ws` alanını kapsar. |
+| Oturum ve kayıt | Noise oturumları, sayaç durumları, denetim kayıtları ve cihaz listeleri alan başına ayrıdır. |
+| Bildirim | FCM projeleri alan başına ayrıdır. Bildirim metni cihazda, ilgili alanın anahtarıyla çözülmüş içerikten üretilir. Bildirimde alan adı ve rengi gösterilir. |
+| Telefon üzerinde veri | Her alanın yerel veritabanı ayrıdır ve ayrı anahtarla şifrelenir. Şirkette MDM varsa BUSINESS alanı MDM gereksinimlerine (ör. Work Profile) uyar. |
+| Bilgisayar | Bir ajan kurulumu tek alana aittir. Aynı bilgisayar iki alanda kullanılacaksa iki ayrı Windows kullanıcı hesabında iki ayrı ajan kurulur. |
+| Alanlar arası aktarım | Faz 1'de **bulunmaz**. Faz 2'de çift onaylı tasarımla gelecek (MIMARI-v0.3 §2.4). |
+| Kalan risk | Telefon iki alanın ortak noktasıdır. Telefonun işletim sistemi ele geçirilirse (V4) iki alan da etkilenebilir. |
+
+## 18. İmzalı Cihaz Listesi (Roster)
+
+- **Yapı:** Her alanda, yalnızca ekleme yapılabilen ve hash zinciriyle bağlı bir cihaz listesi tutulur. Her girişte şunlar bulunur: alan kimliği, sıra numarası, önceki girişin özeti, işlem ve imza.
+- **Kimler giriş yazabilir:** Yalnızca **sahip** telefonların onay anahtarı (biyometrik doğrulamalı) ve Sprint 6'dan itibaren kurtarma anahtarı. Bilgisayarlar ve sunucu liste girişi yazamaz.
+- **Cihaz ekleme:** Eklenen cihaz da kendi anahtarıyla girişi **eş-imzalar**. Bu, anahtara sahip olduğunu kanıtlar ve başkasının açık anahtarının eklenmesini önler. Ekleme için ayrıca fiziksel QR + SAS eşleştirmesi gerekir (§4).
+- **Cihazlar arası güven ilişkileri:** Her telefon–bilgisayar çifti için ayrı bir **bağ** girişi tutulur (`link.set`: rol owner/operator/viewer; `link.remove`). Bir telefonun bir bilgisayardaki yetkisi, başka bir bilgisayardaki yetkisinden bağımsızdır. Bağı olmayan telefon o bilgisayara hiçbir mesaj gönderemez.
+- **İptal:** `device.revoke` girişi cihazı ve **tüm açık anahtarlarını kalıcı yasak listesine** ekler. Aynı kimlik veya aynı anahtarlardan biriyle sonradan yapılan hiçbir ekleme kabul edilmez (G8). Yeniden eklemek için yeni anahtarlar üretilmesi gerekir.
+- **Güncellik:** Her mesaj başlığı gönderenin bildiği liste başını (`rh`: sıra + özet) taşır.
+  - Alıcının listesi daha eskiyse, mesaj eksik girişler alınana kadar **işlenmez.**
+  - Aynı sıra numarasında farklı özet görülürse liste değişiklikleri durdurulur ve kullanıcı uyarılır (çatallanma).
+- **Yeni katılan cihaz:** Listeyi eşleştirmede gösterilen ve sahip tarafından imzalanan liste başına sabitler.
+
+## 19. Kurtarma (Sprint 6)
+
+**Kurtarma katmanları:**
+
+1. **Yedek sahip cihaz:** Kayıp cihazı hemen iptal eder.
+2. **Kağıt kurtarma ifadesi:** 72 saatlik zaman kilidiyle çalışır.
+3. **Yerel kurtarma:** Bilgisayar başında, Windows Hello ile.
+
+**Zaman kilidi kuralları:**
+
+- Zaman kilidi süresi, kurtarma isteğindeki imzalı zamandan değil, **her bilgisayarın isteği ilk gördüğü yerel zamandan** başlar. Bu sayede geriye tarihlenmiş bir istek beklemeyi atlatamaz.
+- Herhangi bir sahip cihaz veya bilgisayar başındaki kullanıcı isteği **veto** edebilir. Yerel veto sunucudan bağımsız çalışır.
+
+**Test şartı:** Kurtarma mekanizması, proje sahibinin şartı gereği **bağımsız güvenlik testinden** geçmeden üretim kullanımına açılmaz (S22).
+
+**Kalan risk:** Kurtarma ifadesi çalınır **ve aynı anda** sunucu veto mesajlarını engellerse, saldırgan 72 saat sonra sahip olabilir. Yerel veto ve bilgisayar ekranındaki uyarı bu riski azaltır, ancak tamamen ortadan kaldırmaz.
+
+## 20. Geri Yükleme (Rollback) Koruması
+
+**Risk:** Ajan veritabanının eski bir yedeği geri yüklenirse, tekrar oynatma sayaçları da eski haline döner. Bu durumda, yedekten sonra işlenmiş ama ömrü dolmamış (en çok 72 saat) komutlar yeniden çalıştırılabilir.
+
+**Önlem:**
+
+1. Ajan, veritabanından **ayrı** bir yerde (Windows'ta DPAPI korumalı kasa) monoton artan bir **durum dönemi** (epoch) tutar. Bu değer yedeğe dahil değildir. Veritabanı her başlangıçta ve sayaç yazmalarında bu değerle karşılaştırılır.
+2. Veritabanındaki dönem kasadakinden eskiyse geri yükleme tespit edilir. Bu durumda:
+   - **Geri yükleme tabanı** = şimdiki zaman olarak ayarlanır.
+   - Zaman damgası bu tabandan önce olan **tüm mesajlar reddedilir.**
+   - Cihaz listesi telefonlardan yeniden senkronize edilir.
+   - Olay denetim kaydına yazılır.
+3. Resmî geri yükleme akışı da (kullanıcı başlatır) aynı tabanı ayarlar.
+
+**Kalan risk:** Saldırgan hem veritabanını hem kasayı birlikte eski haline döndürebilirse (yerel yönetici yetkisi, V4) bu önlem aşılabilir. Bu senaryo uç cihazın ele geçirilmesi kapsamındadır.
+
+## 21. Sunucunun Mesajları Geciktirmesi veya Engellemesi
+
+Relay, her mesajı geciktirebilir veya hiç iletmeyebilir. Bu, **tasarımla ortadan kaldırılamayan** bir risktir. Etkileri ve önlemleri:
+
+| Durum | Güvenliğe etkisi | Kullanılabilirliğe etkisi | Önlem |
+|---|---|---|---|
+| Komut geciktirilir | Komut, imzalı ömrü (`exp`) dolduysa çalışmaz. Ömür dolmadıysa geç çalışır. | Görev gecikir | Kullanıcı kısa ömür seçebilir. Telefon, teslim onayı gelmeyen komutu "beklemede" gösterir. |
+| Onay geciktirilir | Onay, ajan saatine göre 10 dakikada geçersiz olur; geç gelen onayla işlem yapılmaz. | İşlem yapılamaz | Kullanıcıya "onay zamanında ulaşmadı" gösterilir. |
+| **İptal veya acil kilit iletilmez** | Kayıp veya ele geçirilmiş cihaz, ajan iptali öğrenene kadar kullanılmaya devam edebilir. | — | **Yerel iptal ve yerel acil kilit sunucudan bağımsızdır.** Ayrıca `rh` sayesinde ajan, bir sonraki meşru mesajda listesinin eski olduğunu fark eder. İptal tüm sahip cihazlardan yayılır. |
+| Cihaz listesi güncellemesi gizlenir | Yukarıdakiyle aynı | Yeni cihaz çalışmaz | `rh` kontrolü; liste sahiplerden yeniden istenir |
+| Teslim onayı (ack) gizlenir | Yok: tekrar gönderim yinelenen mesaj olarak tanınır ve işlenmez | Telefon görevi yanlış durumda gösterebilir | Görev durumu ajandan sorgulanabilir (`history.query`) |
+| Tüm trafik engellenir | Yok: yerel kullanım sürer | Uzaktan erişim kesilir | Kabul edilir. Durum ekranında "sunucuya ulaşılamıyor" gösterilir. |
+
+Sprint raporları bu senaryoların test sonuçlarını ayrıca içerir (S23).
+
+## 22. Güncelleme Doğrulaması
+
+- Güncellemeler iki ayrı imza taşır: Authenticode (OV) ve çevrimdışı tutulan SAKLAZ yayın anahtarıyla Ed25519 manifest imzası (KOD-IMZALAMA-ONERI.md).
+- Ajan bir güncellemeyi yalnızca şu koşulların **hepsi** sağlanırsa kurar:
+  - İki imza da geçerlidir.
+  - Dosya özetleri manifestle eşleşir.
+  - Sürüm numarası mevcut sürümden **büyüktür** (geri alma koruması).
+- Güncelleme kanalı relay'den ayrıdır.
+- Kademeli dağıtım: önce tek bilgisayar, sonra diğerleri.

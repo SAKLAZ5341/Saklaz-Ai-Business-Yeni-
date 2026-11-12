@@ -1,17 +1,19 @@
 # SAKLAZ AI — Teknik Mimari
 
-> **Sürüm:** v0.2 (Faz 0), 2026-11-12
-> **Durum:** Taslak. Kullanıcı onayı bekliyor.
-> Bu doküman bir tasarımdır. Burada anlatılan hiçbir bileşen henüz kodlanmamış veya test edilmemiştir.
-> v0.1'e göre değişiklikler en altta, §12'de listelenmiştir.
+> **Sürüm:** v0.3, 2026-11-12 (proje sahibi onayı: çok cihazlı, her yerden erişilebilir platform; PERSONAL ve BUSINESS alanları)
+> **Durum:** Onaylı tasarım. Uygulama durumu için bkz. ROADMAP.md ve sprint raporları.
+> Güvenlikle ilgili her ifade SECURITY.md §0'daki varsayımlar altında geçerlidir; hiçbiri mutlak değildir.
+> Değişiklikler en altta, §12 ve §13'te listelenmiştir. v0.3'ün ayrıntılı gerekçesi: docs/MIMARI-v0.3-ONERI.md.
 
 ## 1. Amaç ve Kapsam
 
-SAKLAZ AI, modüler ve çoklu ajanlı bir kişisel ve kurumsal asistan ekosistemidir. Üç parçadan oluşur:
+SAKLAZ AI; telefondan, dünyanın her yerinden, birden çok bilgisayara ve yetki verilen sistemlere güvenli erişim sağlayan, modüler ve çoklu ajanlı bir kişisel ve kurumsal platformdur. Üç parçadan oluşur:
 
-- Windows bilgisayarda çalışan bir ajan.
-- Android (Flutter) mobil uygulama.
-- Şirketin kendi kontrolündeki bir **aktarım (relay) sunucusu**.
+- Her bilgisayarda çalışan bir **ajan**. Her ajan tek bir çalışma alanına aittir.
+- Android (Flutter) mobil uygulama. Tek uygulama içinde PERSONAL ve BUSINESS alanları bulunur; anahtarlar, oturumlar, bildirim içerikleri ve veriler bu alanlar arasında ayrıdır.
+- Her çalışma alanı için ayrı bir **aktarım (relay) sunucusu**:
+  - PERSONAL: proje sahibinin kontrolündeki VPS.
+  - BUSINESS: şirket içi DMZ sanal makinesi.
 
 ASEDEN ERP ile **bağımsız ve varsayılan olarak salt okunur** bir connector üzerinden entegre olur. ASEDEN'in kaynak koduna, veritabanı şemasına veya çalışan sistemine hiçbir değişiklik yapılmaz.
 
@@ -29,6 +31,12 @@ Bu kurallar proje sahibinin talimatıdır. Hiçbir tasarım veya kod kararı bun
 | K6 | Telefon onayları kriptografik olarak doğrulanır. | Ed25519 imzası, parametre özeti, tek kullanımlık ve süreli onay (SECURITY.md §7). |
 | K7 | Sunucu şirket onaylı ve mümkünse şirketin kendi kontrolünde olur. | Kendi sunucunda (self-hosted) Docker Compose dağıtımı. Üçüncü taraf bulut servisi zorunlu değildir (§8). |
 | K8 | Canlı ASEDEN verisi değiştirilmez. | Connector'da yazma yolu yoktur. Keşif yalnızca katalog düzeyinde ve salt okunurdur (docs/discovery). |
+| K9 | PERSONAL ve BUSINESS alanları ayrı anahtar, ayrı sunucu, ayrı kayıt ve ayrı yetkilerle çalışır. | §3A.1; SECURITY.md §17 |
+| K10 | Yeni cihaz yalnızca QR eşleştirmesi ve donanım destekli biyometrik anahtarla imzalanmış sahip onayıyla eklenir. Biyometri ham verisi hiçbir sunucuya gönderilmez; biyometrik eşleştirme yalnızca telefonun işletim sistemi içinde yapılır. | §3A.2; SECURITY.md §18 |
+| K11 | Üç katmanlı kurtarma uygulanır: yedek cihaz, kağıt kurtarma ifadesi (72 saatlik zaman kilidi) ve yerel kurtarma. | §3A.3; SECURITY.md §19 |
+| K12 | Alanlar arası dosya aktarımı Faz 1'de bulunmaz. | Faz 2 |
+| K13 | Eski yedeğin geri yüklenmesi komutların tekrar çalışmasına yol açmamalıdır. İptal edilmiş cihazın anahtarları yeniden kullanılamaz. Telefon–bilgisayar güven ilişkileri ayrı ayrı yönetilir. | SECURITY.md §18, §20 |
+| K14 | Güvenlik garantileri mutlak veya koşulsuz olarak ifade edilmez. | SECURITY.md §0 |
 
 ## 3. Üst Düzey Mimari
 
@@ -61,12 +69,15 @@ Bu kurallar proje sahibinin talimatıdır. Hiçbir tasarım veya kod kararı bun
 
 ### 3.1 Sunucu neyi bilir, neyi bilmez?
 
+Tasarım hedefi aşağıdaki gibidir; SECURITY.md §0'daki varsayımlar altında geçerlidir.
+
 | Sunucu **bilir** (meta veri) | Sunucu **bilmez** |
 |---|---|
 | Hesap e-postası, MFA durumu | Komut metinleri |
 | Cihaz kimlikleri ve açık anahtarları | Dosya içerikleri, dosya adları, rapor içerikleri |
 | Hangi cihazın ne zaman çevrimiçi olduğu | ERP verisi |
 | Mesajların zamanı, boyutu, gönderen/alıcı cihaz | Onayın hangi işlem için verildiği |
+| İmzalı cihaz listesinin şifreli kopyası (saklar ve dağıtır, ancak giriş üretemez) | Diğer çalışma alanının **hiçbir verisi**: her alanın ayrı relay'i vardır |
 | Görev kimliği ve kaba durumu (ör. `running`) | Görev başlığı, parametreleri, sonucu |
 
 Görev başlıkları dahil tüm içerik şifreli taşınır. Sunucudaki görev kaydı yalnızca kimlik, uç noktalar, zaman damgaları ve şifreli olmayan kaba durumdan oluşur.
@@ -86,6 +97,53 @@ Görev başlıkları dahil tüm içerik şifreli taşınır. Sunucudaki görev k
 - Varsayılan: Telefon raporun **özetini** görür (ör. ilk satırlar, toplamlar).
 - Telefonda tam dosyayı görmek, kullanıcının o dosya için açık talebiyle olur. Dosya, ajan tarafından 64 KB'lık parçalara bölünür. Her parça E2EE ile şifrelenir. Sunucu parçaları yalnızca iletir; telefon çevrimdışıysa süreli olarak (varsayılan 24 saat) şifreli tutar ve sonra siler.
 - Organizasyon politikasıyla "dosya cihaz dışına çıkamaz" modu açılabilir. Bu modda yalnızca özet gönderilir.
+
+## 3A. Çalışma Alanları, Cihaz Listesi ve Kurtarma (v0.3)
+
+### 3A.1 Çalışma alanları
+
+```
+                    ┌──────────────────────── TELEFON (tek uygulama) ──────────────────────┐
+                    │  PERSONAL: komut + onay + DH anahtarları,  │  BUSINESS: ayrı anahtarlar,│
+                    │  ayrı yerel DB, ayrı oturumlar, ayrı FCM   │  ayrı DB, ayrı FCM;        │
+                    │                                            │  MDM varsa onun kuralları  │
+                    └──────────────┬─────────────────────────────┴──────────────┬─────────────┘
+                                   │ E2EE                                        │ E2EE
+                    ┌──────────────▼──────────────┐              ┌───────────────▼─────────────┐
+                    │ PERSONAL relay (kişisel VPS)│              │ BUSINESS relay (şirket DMZ) │
+                    └──────────────┬──────────────┘              └───────────────┬─────────────┘
+                    ┌──────────────▼──────────────┐              ┌───────────────▼─────────────┐
+                    │ Ev bilgisayarı + ileride    │              │ Şirket bilgisayarı + ileride│
+                    │ diğer kişisel bilgisayarlar │              │ diğer kurumsal bilgisayarlar│
+                    └─────────────────────────────┘              └─────────────────────────────┘
+```
+
+- Her mesajın imzalı başlığında `ws` (alan kimliği) bulunur. Ajan, kendi alanına ait olmayan mesajı reddeder.
+- Onay özeti de `ws` alanını kapsar.
+- Aynı bilgisayar iki alanda kullanılacaksa, iki ayrı Windows kullanıcı hesabında iki ayrı ajan kurulur.
+
+### 3A.2 İmzalı cihaz listesi ve cihazlar arası güven bağları
+
+- Her alanda, sahip telefonların onay anahtarıyla imzalanan, hash zincirli ve yalnızca ekleme yapılabilen bir liste tutulur (`packages/protocol/src/roster.ts`).
+- **İşlemler:**
+  - `genesis`
+  - `device.add` (eklenen cihazın eş-imzası zorunlu)
+  - `device.revoke` (cihazı ve anahtarlarını kalıcı yasak listesine ekler)
+  - `link.set` / `link.remove`: telefon–bilgisayar çifti başına rol (owner/operator/viewer)
+- Ajan, bir telefonun yetkisini **o telefon ile kendisi arasındaki bağdan** okur.
+- Her mesaj gönderenin bildiği liste başını (`rh`) taşır. Ajanın listesi daha eskiyse mesaj, eksik girişler gelene kadar işlenmez.
+
+### 3A.3 Kurtarma ve geri yükleme
+
+- **Kurtarma katmanları** (ayrıntı: SECURITY.md §19; uygulama Sprint 6):
+  1. Yedek sahip cihaz
+  2. Kağıt kurtarma ifadesi (72 saatlik zaman kilidi; süre, isteğin her bilgisayarda yerel olarak ilk görüldüğü andan başlar)
+  3. Yerel kurtarma
+- **Geri yükleme koruması** (SECURITY.md §20): Veritabanının dışında tutulan monoton bir durum dönemi sayesinde, eski bir yedeğin geri yüklendiği tespit edilir. Geri yükleme anından önceki mesajlar reddedilir.
+
+### 3A.4 Bilgisayarların ve sistemlerin yetkileri
+
+Her bilgisayarın yetenekleri (dosya, uygulama, tarayıcı, ERP, e-posta) **o bilgisayarda yerel olarak** açılır. Telefon yalnızca bağı olan bilgisayarlara ve o bilgisayarda açık olan yeteneklere komut verebilir. "Tüm bilgisayarlara aynı anda" komutu bilinçli olarak yoktur.
 
 ## 4. Bileşenler
 
@@ -362,3 +420,13 @@ erp_cache         entity, key, data jsonb, fetched_at, ttl   -- Faz 2, salt okun
 - Outlook MVP dışına alındı; yöntemi sonra belirlenecek.
 - Self-hosted barındırma seçenekleri ve push bildirim değerlendirmesi eklendi.
 - ASEDEN veritabanı "doğrulanmadı" olarak işaretlendi ve keşif planına bağlandı.
+
+## 13. v0.2 → v0.3 Değişiklikleri
+
+- Ürün kapsamı: çok cihazlı, her yerden erişilebilir kişisel ve kurumsal platform.
+- PERSONAL ve BUSINESS çalışma alanları eklendi: ayrı relay, ayrı anahtar, ayrı kayıt, ayrı yetki (K9).
+- İmzalı cihaz listesi ve telefon–bilgisayar güven bağları eklendi (K10, K13).
+- Üç katmanlı kurtarma (K11), geri yükleme koruması ve iptal edilmiş anahtar yasağı (K13) eklendi.
+- Alanlar arası aktarım Faz 2'ye ertelendi (K12).
+- Güvenlik ifadeleri koşullu dile çevrildi; varsayımlar SECURITY.md §0'da tanımlandı (K14).
+- Protokol başlığına `ws` ve `rh` alanları eklendi. Kriptografi çekirdeği değişmedi.

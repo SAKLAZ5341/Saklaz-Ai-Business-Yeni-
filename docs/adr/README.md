@@ -16,5 +16,9 @@ Her önemli ve geri dönüşü zor karar burada kaydedilir. Bir karar değişti�
 | 0010 | FCM yalnızca içeriksiz uyandırma sinyali için kullanılır | Kabul edildi (proje sahibi, 2026-11-12) |
 | [0011](0011-ayri-onay-anahtari.md) | Telefonda komut ve onay anahtarlarının ayrılması; onayın işlemi tam kapsaması | Önerildi (Sprint 1) |
 | [0012](0012-zaman-ve-sayi-temsili.md) | Tam sayı zaman damgaları, imzalı ömür, kayan pencereli sayaç | Önerildi (Sprint 1) |
+| [0013](0013-calisma-alanlari.md) | PERSONAL ve BUSINESS çalışma alanları | Kabul edildi (proje sahibi, 2026-11-12) |
+| [0014](0014-imzali-cihaz-listesi.md) | İmzalı cihaz listesi ve telefon–bilgisayar güven bağları | Kabul edildi (proje sahibi, 2026-11-12) |
+| [0015](0015-kurtarma.md) | Üç katmanlı kurtarma; bağımsız güvenlik testi şartı | Kabul edildi (proje sahibi, 2026-11-12) |
+| [0016](0016-geri-yukleme-korumasi.md) | Geri yükleme (rollback) koruması | Kabul edildi (proje sahibi, 2026-11-12) |
 
 ADR 0001–0006, 0009 ve 0010'un gerekçeleri ARCHITECTURE.md, SECURITY.md ve docs/FAZ1-PLAN.md içindedir.
