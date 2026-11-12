@@ -1,323 +1,364 @@
 # SAKLAZ AI — Teknik Mimari
 
-> Durum: **Taslak v0.1 — onay bekliyor.** Bu doküman tasarımdır; burada anlatılan hiçbir bileşen henüz kodlanmamış veya test edilmemiştir.
+> **Sürüm:** v0.2 (Faz 0), 2026-11-12
+> **Durum:** Taslak. Kullanıcı onayı bekliyor.
+> Bu doküman bir tasarımdır. Burada anlatılan hiçbir bileşen henüz kodlanmamış veya test edilmemiştir.
+> v0.1'e göre değişiklikler en altta, §12'de listelenmiştir.
 
 ## 1. Amaç ve Kapsam
 
-SAKLAZ AI; Windows bilgisayarda çalışan bir ajan, Android (Flutter) mobil uygulama ve internet üzerindeki merkezi bir sunucudan oluşan, modüler ve çoklu ajanlı bir kişisel/kurumsal asistan ekosistemidir. ASEDEN ERP ile **bağımsız ve varsayılan olarak salt okunur** bir connector üzerinden entegre olur. ASEDEN'in kaynak koduna, veritabanı şemasına veya çalışan sistemine hiçbir değişiklik yapılmaz.
+SAKLAZ AI, modüler ve çoklu ajanlı bir kişisel ve kurumsal asistan ekosistemidir. Üç parçadan oluşur:
 
-### Temel tasarım ilkeleri
+- Windows bilgisayarda çalışan bir ajan.
+- Android (Flutter) mobil uygulama.
+- Şirketin kendi kontrolündeki bir **aktarım (relay) sunucusu**.
 
-1. **Veri yerinde kalır.** Dosyalar, ERP verisi ve e-postalar Windows ajanının bulunduğu makinede işlenir. Merkezi sunucuya yalnızca görev tanımı, durum ve kullanıcının açıkça paylaşmayı seçtiği çıktılar gider.
-2. **Varsayılan reddet (deny-by-default).** Ajan yalnızca izin verilen klasörlere, uygulamalara ve araçlara erişir.
-3. **Kritik işlem = açık onay.** Silme, e-posta gönderme, ERP'ye yazma, sipariş değiştirme gibi işlemler kullanıcının cihazında imzalı onay olmadan çalışmaz.
-4. **Sağlayıcı bağımsızlığı.** AI sağlayıcısı bir arayüz arkasındadır; hiçbiri zorunlu değildir. AI yoksa kural tabanlı otomasyonlar çalışmaya devam eder.
-5. **Dürüst durum.** Mock veri her zaman `source: "mock"` olarak işaretlenir; arayüzde "DEMO VERİ" etiketiyle gösterilir.
+ASEDEN ERP ile **bağımsız ve varsayılan olarak salt okunur** bir connector üzerinden entegre olur. ASEDEN'in kaynak koduna, veritabanı şemasına veya çalışan sistemine hiçbir değişiklik yapılmaz.
 
-## 2. Üst Düzey Mimari
+## 2. Bağlayıcı Tasarım Kuralları
+
+Bu kurallar proje sahibinin talimatıdır. Hiçbir tasarım veya kod kararı bunları ihlal edemez.
+
+| # | Kural | Mimarideki karşılığı |
+|---|---|---|
+| K1 | ASEDEN verileri ve şirket dosyaları izinsiz buluta gönderilmez. | Veri yalnızca Windows ajanında işlenir. Dış AI sağlayıcıları varsayılan olarak kapalıdır (§6). |
+| K2 | Merkezi sunucu yalnızca bağlantı, görev yönlendirme ve cihaz yönetimi yapar. | Sunucu bir "kör aktarıcıdır": içerik görmez, içerik saklamaz (§3.1). |
+| K3 | Dosya içerikleri Windows bilgisayarında işlenir. | Tüm araçlar ajan içinde çalışır. Sunucuda dosya işleme kodu yoktur. |
+| K4 | Telefon ile Windows arasında güvenli ve şifreli iletişim kurulur. | Uçtan uca şifreleme (E2EE). Anahtarlar eşleştirmede doğrudan cihazlar arasında, QR ile değiştirilir (SECURITY.md §4–5). |
+| K5 | Merkezi sunucu ele geçirilse bile kritik işlem yaptıramaz. | Ajan yalnızca eşleştirilmiş telefonun imzaladığı komutları çalıştırır. Sunucunun imza anahtarı yoktur (SECURITY.md §3). |
+| K6 | Telefon onayları kriptografik olarak doğrulanır. | Ed25519 imzası, parametre özeti, tek kullanımlık ve süreli onay (SECURITY.md §7). |
+| K7 | Sunucu şirket onaylı ve mümkünse şirketin kendi kontrolünde olur. | Kendi sunucunda (self-hosted) Docker Compose dağıtımı. Üçüncü taraf bulut servisi zorunlu değildir (§8). |
+| K8 | Canlı ASEDEN verisi değiştirilmez. | Connector'da yazma yolu yoktur. Keşif yalnızca katalog düzeyinde ve salt okunurdur (docs/discovery). |
+
+## 3. Üst Düzey Mimari
 
 ```
-┌──────────────────────┐        HTTPS / WSS (TLS 1.3)        ┌───────────────────────────┐
-│  Android Uygulaması  │ ◄─────────────────────────────────► │      SAKLAZ Merkez        │
-│  (Flutter)           │                                     │  (Node.js + TypeScript)   │
-│  - Komut / ses       │        FCM (yalnızca "uyandırma")   │  - Auth + MFA             │
-│  - Onay (biyometrik) │ ◄────────────────────────────────── │  - Cihaz yönetimi         │
-│  - Görev geçmişi     │                                     │  - Görev kuyruğu          │
-└──────────────────────┘                                     │  - WebSocket hub          │
-                                                             │  - Audit log              │
-                                                             └─────────────▲─────────────┘
-                                                                           │
-                                                 Giden (outbound) WSS — │ — Windows'ta açık port YOK
-                                                                           │
-┌──────────────────────────────────────────────────────────────────────────┴──────────────┐
-│                               Windows Bilgisayar                                         │
-│  ┌────────────────────┐   IPC (named pipe, yalnız yerel kullanıcı)   ┌─────────────────┐ │
-│  │ Masaüstü UI        │ ◄──────────────────────────────────────────► │ SAKLAZ Agent    │ │
-│  │ (Electron + React) │                                              │ Servisi (Node)  │ │
-│  └────────────────────┘                                              │ - Orkestratör   │ │
-│                                                                      │ - Uzman ajanlar │ │
-│                                                                      │ - Araç katmanı  │ │
-│                                                                      │ - Politika motoru│ │
-│                                                                      │ - Yerel SQLite  │ │
-│                                                                      └───────┬─────────┘ │
-│                                                                              │           │
-│              ┌──────────────┬──────────────┬───────────────┬─────────────────┤           │
-│              ▼              ▼              ▼               ▼                 ▼           │
-│        İzinli klasörler  Office/PDF   Outlook (Graph/   Tarayıcı        ASEDEN ERP       │
-│        (allowlist)       okuyucular   COM)              (Playwright)    Connector (R/O)  │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
-                                                                                 │
-                                                                     Salt okunur DB kullanıcısı
-                                                                     veya mevcut API (incelenecek)
+                       Şirket kontrolündeki sunucu (self-hosted)
+                       ┌──────────────────────────────────────────┐
+                       │  SAKLAZ Relay (Node.js + TypeScript)     │
+                       │  - Hesap girişi + MFA (yalnız erişim)    │
+                       │  - Cihaz kaydı (yalnız açık anahtarlar)  │
+                       │  - Şifreli mesaj yönlendirme / kuyruk    │
+                       │  - Çevrimiçi durumu, push tetikleme      │
+                       │  - Meta veri denetim kaydı               │
+                       │  İÇERİK GÖRMEZ · İMZA ANAHTARI YOK       │
+                       └──────▲───────────────────────▲───────────┘
+            WSS (TLS 1.3)     │                       │   WSS (TLS 1.3), yalnızca GİDEN bağlantı
+          ┌───────────────────┘                       └──────────────────────┐
+┌─────────┴────────────┐                                       ┌─────────────┴──────────────────────┐
+│ Android (Flutter)    │ ═══ Uçtan uca şifreli kanal (Noise) ══│ Windows: SAKLAZ Agent Servisi      │
+│ - Komut (imzalı)     │     Sunucu yalnızca şifreli metni     │ - İmza doğrulama, politika motoru  │
+│ - Onay (biyometrik + │     iletir                            │ - Orkestratör + uzman ajanlar      │
+│   Ed25519 imza)      │                                       │ - Araçlar (dosya, Office, PDF)     │
+│ - Görev geçmişi      │                                       │ - Yerel audit (hash zinciri)       │
+│ Android Keystore     │                                       │ - DPAPI kasası, SQLite             │
+└──────────────────────┘                                       └───────┬───────────────┬────────────┘
+                                                        named pipe     │               │ yerel ağ, salt okunur
+                                                        (yalnız yerel  ▼               ▼
+                                                         kullanıcı)  Masaüstü UI     ASEDEN ERP
+                                                                     (Electron)      (keşif sonrası)
 ```
 
-### Görev akışı (uzaktan komut)
+### 3.1 Sunucu neyi bilir, neyi bilmez?
 
-1. Kullanıcı telefondan komut yazar/söyler → Merkez `tasks` tablosuna `queued` olarak kaydeder.
-2. Merkez, hedef Windows cihazının açık WSS bağlantısı üzerinden görevi iletir.
-3. Agent görevi **planlar** (AI varsa LLM ile, yoksa kural/şablon ile) ve her adımı politika motorundan geçirir.
-4. Risk seviyesi `critical` olan adım varsa görev `awaiting_approval` olur; telefona bildirim gider, kullanıcı biyometrik onay verir, onay cihaz anahtarıyla imzalanır.
-5. Agent imzayı doğrular, adımı çalıştırır, sonuçları yerelde saklar; özet ve (izin verildiyse) çıktı dosyası Merkez'e yüklenir.
-6. Her adım hem yerel hem merkezi audit log'a yazılır.
+| Sunucu **bilir** (meta veri) | Sunucu **bilmez** |
+|---|---|
+| Hesap e-postası, MFA durumu | Komut metinleri |
+| Cihaz kimlikleri ve açık anahtarları | Dosya içerikleri, dosya adları, rapor içerikleri |
+| Hangi cihazın ne zaman çevrimiçi olduğu | ERP verisi |
+| Mesajların zamanı, boyutu, gönderen/alıcı cihaz | Onayın hangi işlem için verildiği |
+| Görev kimliği ve kaba durumu (ör. `running`) | Görev başlığı, parametreleri, sonucu |
 
-## 3. Bileşenler
+Görev başlıkları dahil tüm içerik şifreli taşınır. Sunucudaki görev kaydı yalnızca kimlik, uç noktalar, zaman damgaları ve şifreli olmayan kaba durumdan oluşur.
 
-### 3.1 Merkez Sunucu (`apps/server`)
+### 3.2 Görev akışı (uzaktan komut)
+
+1. Kullanıcı telefonda komut yazar. Telefon komutu kendi Ed25519 anahtarıyla **imzalar** ve E2EE oturumuyla **şifreler**.
+2. Sunucu şifreli zarfı hedef Windows cihazına iletir. Cihaz çevrimdışıysa zarfı süreli kuyrukta tutar (varsayılan 24 saat).
+3. Ajan zarfın şifresini çözer ve imzayı **eşleştirmede sabitlenmiş** telefon anahtarıyla doğrular. Ardından zaman damgası ve sayaçla tekrar oynatma (replay) kontrolü yapar.
+4. Ajan görevi planlar. AI izinliyse yerel modelle, değilse kural ve şablonlarla planlar. Her adım politika motorundan geçer.
+5. `critical` bir adım varsa ajan şifreli bir onay isteği gönderir. Telefon işlemin ayrıntılarını gösterir. Kullanıcı biyometrik doğrulama sonrası onaylar ve telefon onayı imzalar. Ajan onayı doğrulamadan adımı çalıştırmaz.
+6. Ajan sonuçları yerelde saklar ve telefona şifreli bir özet gönderir. Tam dosya yalnızca kullanıcı telefondan açıkça isterse aktarılır (§3.3).
+7. Her adım Windows'taki hash zincirli yerel denetim kaydına yazılır. Sunucu yalnızca meta veri olaylarını kaydeder.
+
+### 3.3 Dosya ve rapor aktarımı
+
+- Varsayılan: Telefon raporun **özetini** görür (ör. ilk satırlar, toplamlar).
+- Telefonda tam dosyayı görmek, kullanıcının o dosya için açık talebiyle olur. Dosya, ajan tarafından 64 KB'lık parçalara bölünür. Her parça E2EE ile şifrelenir. Sunucu parçaları yalnızca iletir; telefon çevrimdışıysa süreli olarak (varsayılan 24 saat) şifreli tutar ve sonra siler.
+- Organizasyon politikasıyla "dosya cihaz dışına çıkamaz" modu açılabilir. Bu modda yalnızca özet gönderilir.
+
+## 4. Bileşenler
+
+### 4.1 Relay Sunucu (`apps/relay`)
 
 | Modül | Sorumluluk |
 |---|---|
-| `auth` | Kayıt/giriş, Argon2id parola, TOTP MFA, kısa ömürlü access token + dönen refresh token |
-| `devices` | Cihaz eşleştirme (QR + tek kullanımlık kod), cihaz açık anahtarları, iptal |
-| `tasks` | Görev oluşturma, kuyruk, durum makinesi, yeniden deneme, zaman aşımı |
-| `approvals` | Onay istekleri, imza doğrulama, süre sonu |
-| `realtime` | WebSocket hub (cihaz ve mobil oturumları), heartbeat, bağlantı durumu |
-| `notifications` | FCM push (yalnızca "yeni olay var" — içerik değil) |
-| `artifacts` | Kullanıcının paylaşmayı seçtiği rapor/dosyaların şifreli saklanması |
-| `audit` | Değiştirilemez (append-only, hash zincirli) denetim kaydı |
-| `rbac` | Rol ve izin kontrolü |
+| `auth` | Hesap girişi (Argon2id), TOTP MFA, kısa ömürlü erişim token'ı ve dönen refresh token. **Yalnızca relay'e erişim yetkisi verir; komut yetkisi vermez.** |
+| `devices` | Cihaz kaydı, açık anahtar dizini, iptal listesi. Ajan bu dizine güvenmez; anahtarlar eşleştirmede sabitlenir. |
+| `relay` | WSS oturumları, şifreli zarf yönlendirme, süreli çevrimdışı kuyruk, akış denetimi (backpressure). |
+| `presence` | Çevrimiçi/çevrimdışı durumu, heartbeat. |
+| `push` | Push bildirimini içeriksiz "yeni olay var" sinyali olarak tetikler (§8.3). |
+| `audit` | Meta veri denetim kaydı (append-only, hash zinciri). |
+| `admin` | Kullanıcı ve cihaz yönetimi, kota ve rate-limit ayarları. |
 
-### 3.2 Windows Agent Servisi (`apps/agent`)
+Relay'de iş mantığı, dosya işleme, AI çağrısı veya ERP bağlantısı **bulunmaz**. Bu bilinçli bir sınırdır: ele geçirilmesi durumunda saldırı yüzeyini ve sızacak bilgiyi en aza indirir.
 
-- Kullanıcı oturumu düzeyinde çalışan Node.js süreci (SYSTEM yetkisiyle **değil**). Oturum açılışında başlatılır; Windows Hizmeti olarak çalıştırma Faz 3'te değerlendirilecek.
-- **Orkestratör:** Görevi alt adımlara böler, uygun uzman ajana yönlendirir.
-- **Araç katmanı (tools):** Her araç; ad, giriş şeması (zod), risk seviyesi (`read` / `write` / `critical`) ve gerekli izinleri bildirir. Ajanlar yalnızca araçlar üzerinden dünyaya dokunabilir.
-- **Politika motoru:** Klasör allowlist'i, uygulama allowlist'i, risk → onay eşlemesi, rate limit.
-- **Yerel depo:** SQLite (görev önbelleği, yerel audit, ayarlar). Gizli bilgiler Windows Credential Manager / DPAPI'de.
+### 4.2 Windows Agent Servisi (`apps/agent`)
 
-### 3.3 Masaüstü UI (`apps/desktop`)
+- Kullanıcı oturumu düzeyinde çalışan bir Node.js sürecidir. SYSTEM yetkisiyle çalışmaz. Oturum açılışında başlar.
+- **Taşıma (transport):** Relay'e giden WSS bağlantısı, Noise oturumları, yeniden bağlanma ve outbox.
+- **Doğrulayıcı (verifier):** İmza, replay ve süre kontrolü. Doğrulanmamış hiçbir mesaj orkestratöre ulaşamaz.
+- **Orkestratör:** Görevi adımlara böler ve uzman ajanlara yönlendirir.
+- **Araç katmanı:** Her araç şunları bildirir: ad, zod giriş şeması, risk seviyesi (`read` / `write` / `critical`) ve gerekli izinler.
+- **Politika motoru:** Klasör allowlist'i, risk seviyesinden onay gereksinimine eşleme, rate limit ve veri sınıfı kuralları (DataGuard).
+- **Yerel depo:** SQLite. Gizli bilgiler DPAPI / Windows Credential Manager'da tutulur.
 
-Electron + React. Agent servisiyle yalnızca yerel named pipe üzerinden konuşur; renderer sürecinde Node erişimi kapalı (`contextIsolation`, `sandbox`). Ekranlar: Sohbet, Görevler, Ajanlar, Onaylar, Bildirim Merkezi, İşlem Geçmişi, Sistem Durumu, Ayarlar/İzinler. Koyu tema, lacivert/mavi palet, sol navigasyon.
+### 4.3 Masaüstü UI (`apps/desktop`)
 
-### 3.4 Android Uygulaması (`apps/mobile`)
+- Electron + React ile yazılır. Ajanla yalnızca ACL'li named pipe üzerinden konuşur.
+- Renderer sürecinde Node erişimi kapalıdır; katı CSP uygulanır.
+- **Ekranlar:** Sohbet, Görevler, Ajanlar, Onaylar, Bildirim Merkezi, İşlem Geçmişi, Sistem Durumu, İzinler, Eşleştirilmiş Cihazlar.
+- **Görünüm:** Koyu tema, lacivert ve mavi palet, sol navigasyon menüsü.
+- Masaüstünden verilen komutlar yerel kullanıcı oturumuyla yetkilidir. `critical` işlemler için Windows Hello ile yerel onay alınır.
 
-Flutter. Riverpod (durum), Dio (HTTP), `web_socket_channel`, `firebase_messaging`, `local_auth` (biyometrik), `flutter_secure_storage` (Android Keystore), `speech_to_text` (cihaz üzeri tanıma tercih edilir).
+### 4.4 Android Uygulaması (`apps/mobile`)
 
-### 3.5 ASEDEN ERP Connector (`packages/erp-aseden`)
+- **Uygulama altyapısı:** Flutter 3, Riverpod, Dio.
+- **Bildirim:** Push sağlayıcısı (§8.3).
+- **Güvenlik:** `local_auth` ile biyometrik doğrulama. Anahtarlar Android Keystore'da, mümkünse StrongBox'ta tutulur. İmza anahtarının kullanımı biyometrik doğrulamaya bağlıdır.
+- **Kriptografi:** Mobil taraf, Windows ajanıyla aynı primitifleri kullanır (X25519, Ed25519, ChaCha20-Poly1305). Kriptografi uygulaması kendimiz yazılmaz; denetlenmiş bir libsodium bağlaması kullanılır. Hangi bağlamanın seçileceği Faz 1 başında bir ADR ile belirlenecek.
+- **Uyumluluk:** Uyumluluk test vektörleriyle (`packages/protocol/test-vectors`) sürekli doğrulanır.
 
-- Agent içinde, yerel ağda çalışır; ERP verisi buluta çıkmaz.
-- `ErpConnector` arayüzü: `listPurchaseRequests`, `listQuotes`, `listOrders`, `listSuppliers`, `getStock`, `listAs9100Records`, `runReport`.
-- **Faz 0'da yapılacak keşif tamamlanmadan hiçbir gerçek bağlantı kodu yazılmaz.** Keşifte: veritabanı motoru, sürüm, ilgili tablolar/view'lar, mevcut API varlığı, yetki modeli belgelenecek.
-- Bağlantı tercihi: (1) ASEDEN'in resmi API'si varsa o; (2) yoksa ERP yöneticisinin oluşturacağı **yalnız SELECT yetkili** DB kullanıcısı ve tercihen bizim için açılmış view'lar.
-- Yazma işlemleri ileride `ErpWriteConnector` olarak ayrı paket, ayrı kimlik bilgisi ve zorunlu onay ile eklenir.
-- Testlerde `MockErpConnector` kullanılır; döndürdüğü her kayıt `source: "mock"` taşır.
+### 4.5 ASEDEN ERP Connector (`packages/erp-core`, `packages/erp-aseden`)
 
-### 3.6 Uzman Ajanlar (`packages/agents/*`)
+- Ajan içinde, yerel ağda çalışır. ERP verisi relay'e uğramaz.
+- **`ErpConnector` arayüzü** şu salt okunur yöntemleri içerir:
+  - `listPurchaseRequests`
+  - `listQuotes`
+  - `listOrders`
+  - `listSuppliers`
+  - `getStock`
+  - `listAs9100Records`
+  - `runReport`
+- **Veritabanı motoru henüz doğrulanmadı.** PostgreSQL'e geçildiği, Firestore'un artık kullanılmadığı belirtildi; ancak canlı ortamda teyit edilmedi. Bu doğrulama yapılmadan `erp-aseden` paketine bağlantı kodu yazılmaz. Keşif planı ve entegrasyon seçenekleri için bkz. `docs/discovery/ASEDEN-KESIF.md`.
+- Testlerde `MockErpConnector` kullanılır. Bu connector'ın döndürdüğü her kayıt `source: "mock"` taşır ve UI'da "DEMO VERİ" olarak etiketlenir.
+- Yazma işlemleri ileride ayrı bir paket (`erp-aseden-write`) olarak eklenir. Bu paket ayrı kimlik bilgisi kullanır ve her işlem için zorunlu telefon onayı ister.
 
-| Ajan | Kullandığı araçlar | MVP? |
+### 4.6 Uzman Ajanlar (`packages/agents/*`)
+
+| Ajan | Araçlar | Faz |
 |---|---|---|
-| Excel ve Raporlama | dosya okuma, xlsx okuma/yazma, docx/pdf oluşturma | ✅ |
-| Kişisel Asistan | dosya arama, not, hatırlatma | ✅ (temel) |
-| Satınalma | ERP connector (R/O), raporlama | Faz 2 |
-| AS9100 Kalite | ERP connector, belge okuma, kontrol listeleri | Faz 2 |
-| Yönetim Raporlama | ERP + Excel ajanlarının çıktıları | Faz 2 |
-| E-posta | Outlook (okuma; gönderme = critical) | Faz 3 |
-| Bilgisayar Kontrol | uygulama açma, tarayıcı (Playwright), ekran yardımı | Faz 3 |
+| Excel ve Raporlama | Dosya okuma, xlsx okuma ve yazma, docx/pdf oluşturma | MVP |
+| Kişisel Asistan | Dosya arama, özetleme | MVP (temel) |
+| Satınalma | ERP (salt okunur), raporlama | Faz 2 |
+| AS9100 Kalite | ERP, belge okuma, kontrol listeleri | Faz 2 |
+| Yönetim Raporlama | ERP ve Excel ajanlarının çıktıları | Faz 2 |
+| E-posta | Outlook (sürüm ve yöntem sonra belirlenecek) | Faz 3 — **MVP dışı** |
+| Bilgisayar Kontrol | Uygulama açma, tarayıcı, ekran yardımı | Faz 3 |
 
-Her ajan bir `AgentDefinition` ile tanımlanır: kimlik, açıklama, sistem talimatı, kullanabileceği araç listesi, kural tabanlı fallback planları.
+## 5. Ajan Çalışma Modeli
 
-### 3.7 AI Katmanı (`packages/ai`)
+```ts
+interface AgentDefinition {
+  key: string;                  // "reporting", "purchasing", ...
+  description: string;
+  tools: ToolKey[];             // izin verilen araçların kapalı listesi
+  dataClasses: DataClass[];     // dokunabileceği veri sınıfları
+  rules: RulePlan[];            // AI yokken çalışacak kural tabanlı planlar
+  systemPrompt?: string;        // AI varsa
+}
+
+interface Tool<I, O> {
+  key: ToolKey;
+  risk: "read" | "write" | "critical";
+  input: ZodSchema<I>;
+  requires: Permission[];       // ör. folder.read:<grantId>
+  run(input: I, ctx: ToolContext): Promise<O>;
+}
+```
+
+- Ajanlar dünyaya yalnızca araçlar üzerinden dokunabilir.
+- Araçları çağıran şey her zaman politika motorudur, model değildir. Model yalnızca öneride bulunur; politika motoru izin verir veya reddeder.
+
+## 6. AI Katmanı (`packages/ai`)
 
 ```ts
 interface AIProvider {
   id: string;
-  capabilities: { tools: boolean; vision: boolean; local: boolean };
+  locality: "local" | "external";
+  capabilities: { tools: boolean; vision: boolean };
   chat(req: ChatRequest, opts: { signal: AbortSignal }): Promise<ChatResponse>;
 }
 ```
 
-- Adaptörler: Anthropic, OpenAI uyumlu API'ler, Ollama (yerel). Hepsi isteğe bağlı.
-- **Veri paylaşım politikası:** Her istek öncesi `DataGuard` çalışır; dış sağlayıcıya gidecek içerik, kullanıcının o sağlayıcı ve o veri sınıfı için verdiği izinle karşılaştırılır. ERP ve AS9100 verisi varsayılan olarak yalnızca yerel modele gönderilebilir.
-- **Fallback:** Sağlayıcı yoksa/erişilemezse `RuleEngine` devreye girer (anahtar kelime + şablon tabanlı komutlar: "X klasöründeki Excel'leri özetle", "bu hafta açık siparişleri raporla" vb.).
-- Dosya/e-posta/web içeriği LLM'e her zaman **veri** olarak, ayrı bir blokta verilir; içindeki talimatlar uygulanmaz (prompt injection savunması, bkz. SECURITY.md).
+- **Varsayılan yapılandırma** (K1 gereği):
+  - Dış sağlayıcı kapalıdır.
+  - Yerel model (Ollama vb.) isteğe bağlıdır.
+  - AI yoksa `RuleEngine` çalışır.
+- **Dış sağlayıcı kullanımı:** Bir dış sağlayıcı (Anthropic, OpenAI uyumlu vb.) yalnızca organizasyon yöneticisi tarafından, belirli veri sınıfları için açıkça etkinleştirilebilir. `confidential` sınıfı (ERP, AS9100, müşteri verisi, şirket dosyaları) dış sağlayıcıya gönderilemez. Bu kuralı değiştirmek bir yapılandırma ayarıyla değil, kod değişikliği ve ADR ile mümkündür.
+- **DataGuard:** Her istek öncesi çalışır ve politika dışı içeriği engeller. Engellenen istekler denetim kaydına yazılır.
+- **Güvenilmez içerik:** Dosya, e-posta, web ve ERP içeriği modele "güvenilmez veri" bloklarında verilir. Model ne onay adımını atlayabilir ne de izinleri genişletebilir.
 
-## 4. Teknoloji Seçimleri ve Gerekçeleri
+## 7. Teknoloji Seçimleri ve Gerekçeleri
 
 | Alan | Seçim | Gerekçe | Değerlendirilen alternatif |
 |---|---|---|---|
-| Dil | TypeScript (strict) | Talep edilen; sunucu, ajan ve masaüstü arasında ortak tip/şema | — |
-| Monorepo | pnpm workspaces + Turborepo | Paylaşılan paketler, hızlı önbellekli build | Nx (daha ağır) |
-| Sunucu | Node.js 22 LTS + Fastify | Yüksek performans, şema tabanlı doğrulama, olgun eklenti ekosistemi | Express (daha yavaş, daha az yapı), NestJS (daha fazla soyutlama) |
-| Veritabanı | PostgreSQL 16 | İlişkisel veri, JSONB, row-level güvenlik, olgun yedekleme | MySQL |
-| ORM | Drizzle ORM | SQL'e yakın, TypeScript tip güvenliği, şeffaf migration | Prisma (ağır çalışma zamanı) |
-| Kuyruk | pg-boss (PostgreSQL üstünde) | MVP'de ek altyapı (Redis) gerektirmez | BullMQ + Redis (ölçek gerekirse Faz 4) |
-| Gerçek zamanlı | `ws` + kendi protokolümüz | Hafif, tam kontrol; mesajlar zod ile doğrulanır | Socket.IO |
-| Doğrulama | zod | Tüm sınır noktalarında aynı şema | — |
-| Masaüstü | Electron + React + Vite | TypeScript gereksinimi; Windows/Office entegrasyon kütüphaneleri | Tauri (Rust gerektirir) |
-| UI kit | Tailwind + Radix UI | Erişilebilir, özelleştirilebilir koyu tema | MUI |
-| Excel | ExcelJS | Okuma/yazma, stiller, formüller | SheetJS |
-| Word | mammoth (okuma), docx (yazma) | Saf JS, Office kurulumu gerektirmez | — |
-| PDF | pdfjs-dist (okuma), pdfkit (yazma) | Saf JS | — |
-| Outlook | Microsoft Graph (M365) / PowerShell-COM köprüsü (klasik Outlook) | Ortama göre; Faz 0'da hangisinin kullanıldığı tespit edilecek | — |
-| Tarayıcı | Playwright | Güvenilir, ayrı profil ile izole | Puppeteer |
-| Yerel DB | better-sqlite3 | Gömülü, hızlı, kurulum gerektirmez | — |
-| Mobil | Flutter 3 + Riverpod | Talep edilen; tek kod tabanı | — |
-| Push | Firebase Cloud Messaging | Android standardı | — |
-| Test | Vitest, Playwright (E2E), flutter_test | Hızlı, TS uyumlu | Jest |
-| Gözlemlenebilirlik | pino (yapısal log), OpenTelemetry (Faz 3) | — | — |
-| Dağıtım | Docker Compose (sunucu), electron-builder + kod imzalama (masaüstü) | Basit, tekrarlanabilir | Kubernetes (gereksiz karmaşıklık) |
+| Dil | TypeScript (strict) | Talep edildi. Relay, ajan ve masaüstü ortak tip ve şemayı paylaşır. | — |
+| Monorepo | pnpm workspaces + Turborepo | Paylaşılan paketler, önbellekli build. | Nx |
+| Relay | Node.js 22 LTS + Fastify + `ws` | Hafif, şema tabanlı doğrulama, tam protokol kontrolü. | NestJS, Socket.IO |
+| Relay DB | PostgreSQL 16 | Self-hosted'da olgun, yedeklemesi kolay. | — |
+| ORM | Drizzle | SQL'e yakın, şeffaf migration. | Prisma |
+| Kuyruk | PostgreSQL tabanlı (pg-boss) | Ek altyapı gerektirmez. | Redis/BullMQ (ölçek gerekirse) |
+| E2EE | Noise Protocol (`Noise_KK_25519_ChaChaPoly_BLAKE2s`) + Ed25519 uygulama imzaları | İleri gizlilik (forward secrecy), karşılıklı kimlik doğrulama, iyi analiz edilmiş bir çerçeve. | TLS mTLS (sunucuda sonlanır, K4'ü sağlamaz); Signal protokolü (çoklu cihaz grupları için fazla karmaşık) |
+| Kripto kütüphanesi | libsodium (JS: `libsodium-wrappers-sumo`, Dart: denetlenmiş bağlama) | Denetlenmiş, iki platformda da var. | WebCrypto (Ed25519/X25519 desteği platforma göre değişken) |
+| Doğrulama | zod | Tüm sınır noktalarında aynı şema. | — |
+| Masaüstü | Electron + React + Vite | TypeScript gereksinimi. | Tauri (Rust gerektirir) |
+| Office/PDF | ExcelJS, mammoth, docx, pdfjs-dist, pdfkit | Office kurulumu gerektirmez, tamamen yerel çalışır. | Office COM (kırılgan) |
+| Yerel DB | better-sqlite3 | Gömülü. | — |
+| Mobil | Flutter 3 + Riverpod | Talep edildi. | — |
+| Test | Vitest, Playwright, flutter_test, çapraz platform kripto test vektörleri | — | Jest |
+| Dağıtım | Docker Compose (relay), electron-builder + kod imzalama | Self-hosted için basit ve tekrarlanabilir. | Kubernetes (gereksiz) |
 
-> Not: Mobil uygulama Dart ile yazılacaktır (Flutter gereksinimi). Mobil ile sunucu arasındaki sözleşme OpenAPI'den otomatik üretilen Dart istemcisi ile tip güvenli tutulur.
+## 8. Dağıtım ve Barındırma
 
-## 5. Proje Klasör Yapısı
+### 8.1 Seçenekler
+
+| Seçenek | Açıklama | Artı | Eksi |
+|---|---|---|---|
+| **A. Şirket içi VM + 443 yayını (önerilen)** | Şirketin sanal makinesi. Önünde ters vekil sunucu (Caddy/Nginx) var ve yalnızca 443 portu dışarı açık. | Tam kontrol. Telefon her yerden bağlanır. | Bir portun internete açılması ve IT onayı gerekir. |
+| B. Şirket içi VM + yalnız VPN (WireGuard) | Relay internete hiç açılmaz. Telefon VPN üzerinden bağlanır. | En küçük saldırı yüzeyi. | Telefonda VPN yönetimi gerekir; kullanım zorlaşır. |
+| C. Şirket hesabındaki VPS (yurt içi sağlayıcı) | Şirket adına kiralanmış sunucu. | Kurulumu kolaydır. Ağ IT'den bağımsızdır. | Fiziksel kontrol sağlayıcıdadır. E2EE sayesinde içerik yine okunamaz. |
+
+E2EE sayesinde üç seçenekte de relay yalnızca meta veri görür. Seçim, IT politikasına ve müşteri gereksinimlerine göre yapılmalıdır (ör. savunma sanayii müşterilerinin veri yerleşimi şartları). **Karar proje sahibine aittir** (bkz. docs/FAZ0-RAPOR.md).
+
+### 8.2 Relay sunucu gereksinimleri
+
+| Kalem | Gereksinim |
+|---|---|
+| İşletim sistemi | Linux (Ubuntu 24.04 LTS veya Debian 12), 2 vCPU, 4 GB RAM, 40 GB disk. 50 cihaza kadar yeterli tahmin; Faz 1'de yük testiyle doğrulanacak. |
+| Yazılım | Docker Engine + Compose. |
+| Alan adı ve sertifika | Alan adı ve TLS sertifikası (Let's Encrypt veya şirket CA). |
+| Yedekleme | Relay DB için günlük yedekleme. Relay içerik saklamadığından yedek küçük ve düşük hassasiyetlidir. |
+
+### 8.3 Push bildirim
+
+- Android'de güvenilir arka plan bildirimi pratikte Firebase Cloud Messaging (FCM) üzerinden yapılır. FCM bir Google servisidir.
+- K1 ile uyum için FCM'e yalnızca **içeriksiz uyandırma sinyali** gönderilir. Bu sinyal görev adı, kullanıcı verisi ve şirket verisi taşımaz. İçerik, uygulama açıldığında E2EE kanaldan çekilir.
+- FCM'in hiç kabul edilmediği durumlar için alternatif: uygulama açıkken WSS bağlantısı ve kendi barındırılan UnifiedPush/ntfy sunucusu. Bu yol, pil ve teslim güvenilirliği açısından dezavantajlıdır.
+- **Karar proje sahibine aittir.**
+
+## 9. Klasör Yapısı
 
 ```
 saklaz-ai/
-├── ARCHITECTURE.md
-├── ROADMAP.md
-├── SECURITY.md
-├── README.md
-├── package.json                 # pnpm workspace kökü
-├── pnpm-workspace.yaml
-├── turbo.json
-├── tsconfig.base.json
-├── .github/workflows/           # CI: lint, typecheck, test, güvenlik taraması
+├── ARCHITECTURE.md  ROADMAP.md  SECURITY.md  README.md
+├── package.json  pnpm-workspace.yaml  turbo.json  tsconfig.base.json
+├── .github/workflows/            # lint, typecheck, test, gitleaks, CodeQL
 ├── docs/
-│   ├── adr/                     # Mimari karar kayıtları
-│   ├── discovery/               # Faz 0 ortam ve ASEDEN keşif raporları
-│   └── api/                     # OpenAPI tanımı
+│   ├── FAZ0-RAPOR.md             # Faz 0 sonuç raporu
+│   ├── REQUIREMENTS.md           # Teknik gereksinimler
+│   ├── RISKS.md                  # Risk kaydı
+│   ├── adr/                      # Mimari karar kayıtları
+│   └── discovery/                # ASEDEN ve Windows keşif belgeleri
+├── tools/discovery/              # Salt okunur keşif betikleri
 ├── apps/
-│   ├── server/                  # Merkez (Fastify)
-│   │   ├── src/{auth,devices,tasks,approvals,realtime,notifications,artifacts,audit,rbac}/
-│   │   ├── src/db/{schema,migrations}/
-│   │   └── test/
-│   ├── agent/                   # Windows ajan servisi
-│   │   ├── src/{orchestrator,policy,tools,transport,ipc,store,secrets}/
-│   │   └── test/
-│   ├── desktop/                 # Electron + React UI
-│   │   └── src/{main,preload,renderer}/
-│   └── mobile/                  # Flutter uygulaması
-│       └── lib/{features,core,data}/
+│   ├── relay/                    # Relay sunucu
+│   ├── agent/                    # Windows ajan servisi
+│   ├── desktop/                  # Electron UI
+│   └── mobile/                   # Flutter
 ├── packages/
-│   ├── protocol/                # Mesaj tipleri ve zod şemaları (sunucu ↔ ajan ↔ UI)
-│   ├── ai/                      # AIProvider arayüzü, adaptörler, DataGuard, RuleEngine
-│   ├── agents/                  # Uzman ajan tanımları
-│   │   ├── reporting/
-│   │   ├── personal/
-│   │   ├── purchasing/
-│   │   ├── quality-as9100/
-│   │   ├── email/
-│   │   ├── computer-control/
-│   │   └── management-reporting/
-│   ├── tools/                   # Araçlar (fs, xlsx, docx, pdf, outlook, browser, apps)
-│   ├── erp-core/                # ErpConnector arayüzü + MockErpConnector
-│   ├── erp-aseden/              # ASEDEN connector (keşiften sonra)
-│   ├── crypto/                  # İmza, eşleştirme, anahtar yönetimi yardımcıları
-│   ├── ui/                      # Paylaşılan React bileşenleri ve tema
-│   └── config/                  # eslint, tsconfig, vitest ortak ayarları
+│   ├── protocol/                 # Zarf tipleri, zod şemaları, kripto test vektörleri
+│   ├── crypto/                   # Noise oturumu, imza, eşleştirme (libsodium üzerine ince katman)
+│   ├── policy/                   # Politika motoru, risk seviyeleri, DataGuard
+│   ├── ai/                       # AIProvider, adaptörler, RuleEngine
+│   ├── agents/                   # Uzman ajan tanımları
+│   ├── tools/                    # Araçlar
+│   ├── erp-core/                 # ErpConnector arayüzü + MockErpConnector
+│   ├── erp-aseden/               # Keşif doğrulanana kadar BOŞ
+│   ├── ui/                       # Paylaşılan React bileşenleri, tema
+│   └── config/                   # eslint, tsconfig, vitest ortak ayarları
 └── infra/
-    ├── docker/                  # docker-compose (server, postgres)
+    ├── docker/                   # docker-compose: relay, postgres, caddy
     └── scripts/
 ```
 
-## 6. Veritabanı Tasarımı
+## 10. Veritabanı Tasarımı
 
-### 6.1 Merkez (PostgreSQL)
-
-```
-users
-  id uuid PK, email citext UNIQUE, password_hash text, display_name text,
-  mfa_secret_enc bytea NULL, mfa_enabled bool, status enum(active,locked,disabled),
-  created_at, updated_at, last_login_at
-
-roles             id, name UNIQUE (owner, admin, operator, viewer), description
-permissions       id, key UNIQUE (ör. "task.create", "approval.grant", "erp.read")
-role_permissions  role_id FK, permission_id FK, PK(role_id, permission_id)
-user_roles        user_id FK, role_id FK, organization_id FK, PK(...)
-
-organizations     id, name, created_at                 # kurumsal kullanım için
-
-refresh_tokens
-  id, user_id FK, token_hash, family_id, expires_at, revoked_at, created_ip, user_agent
-
-devices
-  id uuid PK, owner_user_id FK, organization_id FK, kind enum(windows_agent, android),
-  name, public_key bytea (Ed25519), platform_info jsonb, status enum(active,revoked),
-  last_seen_at, created_at, revoked_at
-
-pairing_codes
-  id, user_id FK, code_hash, kind, expires_at (≤5 dk), used_at, attempts
-
-tasks
-  id uuid PK, organization_id FK, created_by_user_id FK, source_device_id FK,
-  target_device_id FK, agent_key text, title, input jsonb,
-  status enum(queued, dispatched, running, awaiting_approval, succeeded, failed, cancelled, expired),
-  priority smallint, result_summary text, error jsonb,
-  created_at, started_at, finished_at
-
-task_events
-  id bigserial PK, task_id FK, seq int, type text, payload jsonb, created_at
-  UNIQUE(task_id, seq)
-
-approvals
-  id uuid PK, task_id FK, step_id text, action_key text, risk enum(write, critical),
-  description text, params_digest bytea (sha256), requested_at, expires_at,
-  decided_by_user_id FK, decided_device_id FK, decision enum(approved, rejected, expired),
-  signature bytea, decided_at
-
-artifacts
-  id uuid PK, task_id FK, owner_user_id FK, filename, mime, size_bytes,
-  sha256, storage_key, encryption_key_id, is_mock bool, created_at, expires_at
-
-notifications
-  id, user_id FK, type, title, body, ref_type, ref_id, read_at, created_at
-
-ai_provider_configs
-  id, organization_id FK, provider_key, display_name, enabled bool,
-  allowed_data_classes text[], settings jsonb, created_at
-  # API anahtarları burada TUTULMAZ; ajan tarafında yerel kasada saklanır
-
-audit_logs (append-only)
-  id bigserial PK, occurred_at timestamptz, actor_type enum(user, device, system),
-  actor_id, organization_id, action text, target_type, target_id,
-  ip inet, details jsonb, prev_hash bytea, hash bytea
-```
-
-İndeksler: `tasks(target_device_id, status)`, `tasks(created_by_user_id, created_at desc)`, `task_events(task_id, seq)`, `audit_logs(organization_id, occurred_at)`, `notifications(user_id, read_at)`.
-
-`audit_logs` için uygulama DB kullanıcısının yalnızca `INSERT` ve `SELECT` yetkisi olur; `UPDATE/DELETE` yetkisi verilmez.
-
-### 6.2 Windows Agent (SQLite, yerel)
+### 10.1 Relay (PostgreSQL) — yalnızca meta veri
 
 ```
-settings           key PK, value
-folder_grants      id, path, access enum(read, read_write), recursive bool, granted_at, granted_by
-app_grants         id, exe_path, sha256, display_name, granted_at
-local_tasks        id (merkezdeki task id), status, plan jsonb, created_at, updated_at
-local_steps        id, task_id, tool_key, risk, input jsonb, output_ref, status, started_at, finished_at
-local_audit        id, occurred_at, action, details jsonb, prev_hash, hash
-outbox             id, kind, payload jsonb, created_at, sent_at   # çevrimdışı senkron için
-erp_cache          entity, key, data jsonb, fetched_at, ttl       # yalnız R/O önbellek, Faz 2
+users             id uuid PK, email citext UNIQUE, password_hash, display_name,
+                  mfa_secret_enc bytea, mfa_enabled bool, status, created_at, last_login_at
+organizations     id, name, settings jsonb (politika bayrakları), created_at
+memberships       user_id, organization_id, role enum(owner, admin, operator, viewer)
+refresh_tokens    id, user_id, token_hash, family_id, expires_at, revoked_at
+
+devices           id uuid PK, organization_id, owner_user_id, kind enum(windows_agent, android),
+                  label_enc bytea,                -- cihaz adı da şifreli (yalnız cihazlar okur)
+                  sign_pubkey bytea (Ed25519), dh_pubkey bytea (X25519),
+                  status enum(active, revoked), created_at, last_seen_at, revoked_at
+device_links      phone_device_id, agent_device_id, created_at, revoked_at
+                  -- hangi telefon hangi ajana bağlı (yönlendirme için)
+pairing_sessions  id, agent_device_id, expires_at (≤5 dk), state, attempts
+                  -- eşleştirme sırrını TUTMAZ; sır yalnızca QR'da
+
+envelopes         id uuid PK, from_device_id, to_device_id, kind enum(msg, file_chunk),
+                  ciphertext bytea, size int, created_at, expires_at, delivered_at
+                  -- çevrimdışı kuyruk; teslimden sonra veya süre dolunca silinir
+task_index        id uuid PK (istemcinin ürettiği), organization_id, phone_device_id,
+                  agent_device_id, coarse_status enum(sent, delivered, running,
+                  awaiting_approval, done, failed), created_at, updated_at
+                  -- başlık, parametre, sonuç YOK
+
+audit_meta        id bigserial PK, occurred_at, actor_type, actor_id, organization_id,
+                  action, target_type, target_id, ip inet, details jsonb, prev_hash, hash
 ```
 
-## 7. Gerçek Zamanlı Protokol (özet)
+- Uygulama DB kullanıcısının `audit_meta` tablosunda yalnızca `INSERT` ve `SELECT` yetkisi vardır.
+- `envelopes` tablosu periyodik olarak temizlenir.
 
-Tüm mesajlar `packages/protocol` içinde zod şemasıyla tanımlanır:
+### 10.2 Windows Agent (SQLite) — içeriğin asıl yaşadığı yer
 
-```ts
-type Envelope =
-  | { t: "hello"; deviceId; nonce; sig }           // ajan → merkez: kimlik kanıtı
-  | { t: "task.dispatch"; task }                    // merkez → ajan
-  | { t: "task.event"; taskId; seq; event }         // ajan → merkez
-  | { t: "approval.request"; approval }             // ajan → merkez → mobil
-  | { t: "approval.decision"; approvalId; decision; sig } // mobil → merkez → ajan
-  | { t: "ping" } | { t: "pong" };
+```
+identity          sign_privkey_ref, dh_privkey_ref   -- DPAPI korumalı anahtar referansları
+paired_devices    device_id, sign_pubkey, dh_pubkey, label, role, paired_at, revoked_at
+replay_guard      device_id, last_counter, recent_nonces
+folder_grants     id, path, access enum(read, read_write), recursive, granted_at
+tasks             id, from_device_id, title, input jsonb, plan jsonb, status, created_at, finished_at
+steps             id, task_id, tool_key, risk, input jsonb, output_ref, status, started_at, finished_at
+approvals         id, task_id, step_id, params_digest, requested_at, expires_at,
+                  decision, signer_device_id, signature, decided_at
+audit             id, occurred_at, action, details jsonb, prev_hash, hash
+outbox            id, to_device_id, envelope blob, created_at, sent_at
+erp_cache         entity, key, data jsonb, fetched_at, ttl   -- Faz 2, salt okunur önbellek
 ```
 
-Doğrulanamayan veya şemaya uymayan mesaj bağlantıyı kapatır ve audit'e yazılır.
+### 10.3 Android (yerel, şifreli)
 
-## 8. Hata Yönetimi
+- `paired_agents`, `task_history`, `approval_history` tutulur. Veritabanı SQLCipher ile şifrelenir; anahtarı Keystore'dadır.
 
-- Tüm modüller `Result`/tipli hata sınıfları kullanır (`ValidationError`, `PermissionDenied`, `ApprovalRequired`, `ToolFailure`, `ProviderUnavailable`).
-- Görev adımları idempotent anahtarla çalışır; yeniden denemede çift işlem olmaz.
-- Ajan bağlantısı koptuğunda olaylar `outbox`'ta biriktirilir, yeniden bağlanınca sırayla gönderilir.
-- Kullanıcıya gösterilen hata mesajları Türkçe ve eyleme dönüktür; teknik detay yalnız loglarda.
+## 11. Hata Yönetimi
 
-## 9. Açık Sorular (Faz 0'da yanıtlanacak)
+- Tipli hatalar kullanılır:
+  - `ValidationError`
+  - `SignatureInvalid`
+  - `ReplayDetected`
+  - `PermissionDenied`
+  - `ApprovalRequired`
+  - `ApprovalExpired`
+  - `ToolFailure`
+  - `ProviderUnavailable`
+- Görev adımları idempotent anahtarlarla çalışır.
+- Bağlantı koptuğunda zarflar outbox'ta bekler.
+- Kriptografik doğrulama hataları hiçbir zaman "yeniden dene" ile geçiştirilmez. Mesaj reddedilir ve denetim kaydına yazılır.
+- Kullanıcı mesajları Türkçe ve eyleme dönüktür.
 
-1. ASEDEN ERP'nin veritabanı motoru ve sürümü nedir? Resmî bir API'si var mı?
-2. ERP yöneticisi salt okunur bir kullanıcı/view oluşturabilir mi?
-3. Outlook klasik masaüstü mü, Microsoft 365 / Exchange Online mı?
-4. Merkez sunucu nerede barındırılacak (şirket içi, Türkiye'de bulut, yurt dışı bulut)? KVKK ve savunma sanayii müşteri gereksinimleri (ör. ROKETSAN) veri yerleşimini etkileyebilir.
-5. Kaç kullanıcı ve kaç Windows cihazı hedefleniyor?
-6. Dış AI sağlayıcılarına hangi veri sınıflarının gönderilmesine izin verilecek?
-7. Windows makinelerde yönetici yetkisi ve kod imzalama sertifikası mevcut mu?
+## 12. v0.1 → v0.2 Değişiklikleri
+
+- Merkez sunucu, "kör aktarıcı" (relay) rolüne indirildi (K2).
+- Telefon ile Windows arasına uçtan uca şifreleme eklendi. Komutlar da imzalı hale geldi; v0.1'de yalnızca onaylar imzalıydı (K4, K5).
+- Sunucuda artifact (dosya) depolama kaldırıldı. Yerine süreli, şifreli parça aktarımı geldi.
+- Dış AI sağlayıcıları varsayılan olarak kapatıldı (K1).
+- Outlook MVP dışına alındı; yöntemi sonra belirlenecek.
+- Self-hosted barındırma seçenekleri ve push bildirim değerlendirmesi eklendi.
+- ASEDEN veritabanı "doğrulanmadı" olarak işaretlendi ve keşif planına bağlandı.

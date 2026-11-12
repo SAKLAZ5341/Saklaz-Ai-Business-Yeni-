@@ -1,109 +1,176 @@
 # SAKLAZ AI — Yol Haritası
 
-> Durum: **Taslak v0.1 — onay bekliyor.** Süreler tek tam zamanlı geliştirici varsayımıyla kaba tahmindir; Faz 0 sonunda güncellenecektir.
+> **Sürüm:** v0.2 (Faz 0), 2026-11-12
+> **Varsayım:** Süreler, tek tam zamanlı geliştirici varsayımıyla kaba tahmindir.
+>
+> **Durum işaretleri:**
+> - ⬜ Planlandı
+> - 🟨 Devam ediyor
+> - ⏸ Proje sahibinin girdisini bekliyor
+> - ✅ Tamamlandı (yalnızca testi geçen maddeler)
+>
+> Her faz, proje sahibinin **ayrı onayıyla** başlar.
 
-Durum işaretleri: ⬜ planlandı · 🟨 devam ediyor · ✅ tamamlandı **ve testleri geçiyor**. Testi olmayan veya çalışmayan hiçbir madde ✅ olarak işaretlenmez.
+## Faz 0 — Keşif ve Temel Tasarım (onaylandı: 2026-11-12)
 
-## Faz 0 — Keşif ve Temel (≈1–2 hafta)
+### Belgeler
 
-Amaç: Varsayım yapmadan gerçek ortamı belgelemek ve iskeleti kurmak.
+| Madde | Durum |
+|---|---|
+| Mimari belgesi v0.2: kör relay, E2EE, self-hosted (ARCHITECTURE.md) | 🟨 Taslak hazır, onay bekliyor |
+| Güvenlik modeli v0.2: tehdit modeli, eşleştirme, onay kriptografisi (SECURITY.md) | 🟨 Taslak hazır, onay bekliyor |
+| Teknik gereksinimler (docs/REQUIREMENTS.md) | 🟨 Taslak hazır |
+| Risk kaydı (docs/RISKS.md) | 🟨 Taslak hazır |
+| ADR listesi (docs/adr) | 🟨 Taslak hazır |
+| Faz 0 sonuç raporu (docs/FAZ0-RAPOR.md) | 🟨 Taslak hazır |
 
-- ⬜ Windows ortam analizi: Windows sürümü, Office/Outlook türü (klasik / M365), yönetici yetkisi, antivirüs/EDR politikaları, ağ/proxy kısıtları.
-- ⬜ ASEDEN ERP keşfi (**yalnızca dokümantasyon ve ERP yöneticisi ile görüşme; sisteme dokunmadan**): DB motoru ve sürümü, resmî API varlığı, ilgili tablolar/view'lar, salt okunur kullanıcı imkânı. Çıktı: `docs/discovery/aseden.md`.
-- ⬜ Barındırma kararı (şirket içi / yurt içi bulut / yurt dışı bulut) — KVKK ve müşteri (ör. savunma sanayii) gereksinimleriyle birlikte.
-- ⬜ AI veri politikası kararı: hangi veri sınıfı hangi sağlayıcıya gidebilir.
-- ⬜ Monorepo iskeleti, ortak tsconfig/eslint, CI (lint + typecheck + test + gitleaks).
-- ⬜ `packages/protocol` ilk şemaları.
+### Keşif araçları
 
-**Çıkış kriteri:** Keşif raporları onaylandı, CI yeşil, açık sorular (ARCHITECTURE.md §9) yanıtlandı.
+| Madde | Durum |
+|---|---|
+| ASEDEN keşif planı ve entegrasyon seçenekleri (docs/discovery/ASEDEN-KESIF.md) | ✅ Belge hazır |
+| ASEDEN katalog keşif betiği (tools/discovery/aseden-pg-katalog.sql) | ✅ Yerel test PostgreSQL 16'da çalıştı; salt okunur koruma doğrulandı |
+| Windows envanter betiği (tools/discovery/windows-envanter.ps1) | 🟨 Yazıldı. **Henüz Windows'ta test edilmedi.** İlk çalıştırmada doğrulanacak. |
 
-## Faz 1 — MVP (≈6–8 hafta)
+### Keşfin yürütülmesi
 
-Amaç: Telefondan güvenli şekilde komut gönderip Windows'ta dosya analizi ve rapor üretebilmek.
+| Madde | Durum |
+|---|---|
+| ASEDEN Adım A: kaynak kod incelemesi | ⏸ Kaynak koda salt okunur erişim gerekli |
+| ASEDEN Adım B–D: çalışan sistem, Firestore kullanımı, katalog | ⏸ ASEDEN yöneticisi tarafından yürütülecek |
+| ASEDEN bulgu tablosunun doldurulması ve entegrasyon yönteminin seçimi | ⏸ |
+| Windows envanteri: en az bir hedef bilgisayarda | ⏸ |
 
-### MVP kapsamı (DAHİL)
+### Kararlar
 
-**Merkez**
-- ⬜ Kayıt/giriş, Argon2id, TOTP MFA, token rotasyonu
-- ⬜ RBAC (owner, operator, viewer)
-- ⬜ Cihaz eşleştirme (QR + doğrulama özeti) ve iptal
-- ⬜ Görev kuyruğu (pg-boss) ve görev durum makinesi
-- ⬜ WebSocket hub, cihaz çevrimiçi/çevrimdışı durumu
-- ⬜ İmzalı onay akışı
-- ⬜ FCM push (içeriksiz)
-- ⬜ Hash zincirli audit log
-- ⬜ Rapor/dosya paylaşımı (şifreli saklama)
+| Madde | Durum |
+|---|---|
+| Barındırma kararı (ARCHITECTURE.md §8.1, Seçenek A/B/C) | ⏸ Proje sahibi |
+| Push bildirim kararı (FCM veya self-hosted) | ⏸ Proje sahibi |
 
-**Windows Agent + Masaüstü**
-- ⬜ Giden WSS bağlantısı, yeniden bağlanma, outbox
-- ⬜ Politika motoru + klasör allowlist + risk seviyeleri
-- ⬜ Araçlar: klasör listeleme/arama, Excel okuma ve analiz, PDF okuma, Word okuma, Excel/Word/PDF rapor oluşturma
-- ⬜ Excel ve Raporlama ajanı
-- ⬜ Kişisel Asistan ajanı (temel: dosya bulma, özetleme)
-- ⬜ AI katmanı: `AIProvider` arayüzü + 1 bulut adaptörü + Ollama adaptörü + RuleEngine fallback + DataGuard
-- ⬜ Masaüstü UI: Sohbet, Görevler, Onaylar, İşlem Geçmişi, Sistem Durumu, İzinler (koyu tema, lacivert/mavi)
+### Altyapı
+
+| Madde | Durum |
+|---|---|
+| GitHub repo erişimi | ⏸ Erişim izni gerekli |
+
+### Çıkış kriteri
+
+- Belgeler onaylandı.
+- ASEDEN bulgu tablosundaki B1–B4 dolduruldu. B5–B8, Faz 2 öncesine kadar tamamlanabilir.
+- Barındırma ve push kararları verildi.
+- Windows envanteri alındı.
+
+> **Not:** ASEDEN keşfi MVP'yi **engellemez**, çünkü ERP MVP kapsamında değildir. Bu nedenle, Faz 0 belgeleri ve barındırma kararı onaylanırsa MVP, ASEDEN keşfiyle paralel yürüyebilir. Bu, proje sahibinin onayına bağlıdır.
+
+## Faz 1 — MVP (≈8–10 hafta)
+
+**Amaç:** Telefondan uçtan uca şifreli ve imzalı komutla Windows'ta dosya analizi ve rapor üretmek.
+
+E2EE ve relay modeli nedeniyle v0.1 tahmini 2 hafta artırıldı.
+
+### Kapsam
+
+**Temel ve kripto**
+
+- ⬜ Monorepo, CI (lint, typecheck, test, gitleaks, CodeQL)
+- ⬜ `packages/protocol`: Zarf şemaları, kanonik JSON, test vektörleri
+- ⬜ `packages/crypto`: Eşleştirme (QR + SAS), Noise_KK oturumu, imza ve replay koruması
+
+**Relay**
+
+- ⬜ Hesap ve MFA
+- ⬜ Cihaz kaydı
+- ⬜ Şifreli yönlendirme ve süreli kuyruk
+- ⬜ Çevrimiçi durumu (presence)
+- ⬜ Push sinyali
+- ⬜ Meta veri denetim kaydı
+- ⬜ Docker Compose ile kurulum
+
+**Ajan**
+
+- ⬜ Transport ve verifier
+- ⬜ Politika motoru ve klasör allowlist
+- ⬜ Araçlar: dosya, Excel, PDF, Word okuma ve rapor üretimi
+- ⬜ Onay akışı
+- ⬜ Yerel denetim kaydı
+
+**AI**
+
+- ⬜ `AIProvider` arayüzü
+- ⬜ RuleEngine
+- ⬜ Ollama adaptörü (opsiyonel)
+- ⬜ DataGuard
+
+**Ajanlar**
+
+- ⬜ Excel ve Raporlama
+- ⬜ Kişisel Asistan (temel)
+
+**Masaüstü UI**
+
+- ⬜ Sohbet
+- ⬜ Görevler
+- ⬜ Onaylar
+- ⬜ İşlem Geçmişi
+- ⬜ Sistem Durumu
+- ⬜ İzinler
+- ⬜ Eşleştirilmiş Cihazlar
 
 **Android**
-- ⬜ Giriş + MFA + biyometrik kilit
-- ⬜ Yazılı komut gönderme
-- ⬜ Görev geçmişi ve canlı görev durumu
-- ⬜ Windows cihaz bağlantı durumu
+
+- ⬜ Giriş ve MFA
+- ⬜ Eşleştirme
+- ⬜ Yazılı komut
+- ⬜ Görev geçmişi
+- ⬜ Cihaz durumu
 - ⬜ Push bildirim
-- ⬜ İşlem onaylama (biyometrik + imza)
-- ⬜ Rapor görüntüleme/indirme (PDF, Excel önizleme)
+- ⬜ Biyometrik imzalı onay
+- ⬜ Rapor görüntüleme
 
-### MVP dışında (BİLİNÇLİ OLARAK ERTELENDİ)
+### MVP dışı (bilinçli)
 
-- ASEDEN ERP connector (keşif tamamlanmadan yazılmayacak) → Faz 2
-- Sesli komut → Faz 2
-- Outlook entegrasyonu, e-posta gönderme → Faz 3
-- Tarayıcı otomasyonu, program açma, ekran yardımı → Faz 3
-- Çoklu organizasyon, iOS, web paneli → Faz 4
+| Madde | Faz |
+|---|---|
+| ASEDEN connector | 2 |
+| Sesli komut | 2 |
+| **Outlook** (sürüm ve yöntem sonra tespit edilecek) | 3 |
+| Tarayıcı ve ekran otomasyonu | 3 |
+| Dış AI sağlayıcı adaptörleri | 2, yönetici onayıyla |
 
-**Çıkış kriteri:** Uçtan uca senaryo testleri geçer:
-1. Telefondan "Raporlar klasöründeki Excel dosyalarını özetle" → masaüstünde rapor oluşur, telefonda görüntülenir.
-2. Allowlist dışı klasöre erişim girişimi reddedilir ve loglanır.
-3. Kritik işlem onaysız çalışmaz; süresi geçmiş veya değiştirilmiş onay reddedilir.
-4. AI sağlayıcı kapalıyken kural tabanlı komutlar çalışır.
-5. Güvenlik kontrolleri S1–S9, S11, S12 testleri yeşil.
+### Çıkış kriterleri
+
+Aşağıdaki senaryoların tamamı otomatik testle geçmelidir:
+
+1. Telefondan verilen "Raporlar klasöründeki Excel'leri özetle" komutu, Windows'ta rapor üretir ve özet telefonda görünür.
+2. Relay veritabanı ve trafik kaydı incelendiğinde komut, dosya adı veya içerik düz metin olarak bulunmaz.
+3. Ele geçirilmiş relay simülasyonunda sahte komut, sahte onay ve tekrar oynatılan onay reddedilir.
+4. Allowlist dışındaki klasöre erişim reddedilir ve denetim kaydına yazılır.
+5. AI sağlayıcısı yokken kural tabanlı komutlar çalışır.
+6. SECURITY.md'deki S1–S14 ve S16 kontrollerinin testleri yeşildir.
 
 ## Faz 2 — ERP ve Uzman Ajanlar (≈6 hafta)
 
-- ⬜ `erp-core` arayüzü + `MockErpConnector` (her kayıt `source: "mock"`)
-- ⬜ ASEDEN salt okunur connector (keşif raporuna göre; ERP yöneticisinin oluşturduğu R/O kullanıcı ile)
-- ⬜ Satınalma ajanı: açık talepler, bekleyen teklifler, geciken siparişler raporları
-- ⬜ AS9100 Kalite ajanı: tedarikçi değerlendirme kayıtları, uygunsuzluk/DÖF takibi, denetim hazırlık kontrol listeleri
-- ⬜ Yönetim Raporlama ajanı: haftalık/aylık özet panoları
-- ⬜ Sesli komut (cihaz üzeri tanıma öncelikli)
-- ⬜ Zamanlanmış görevler (ör. her pazartesi 08:00 satınalma özeti)
+- ⬜ `erp-core` ve `MockErpConnector`
+- ⬜ ASEDEN connector (keşifte seçilen yöntemle)
+- ⬜ Rapor dışa aktarma yolu (yedek)
+- ⬜ Satınalma, AS9100 Kalite ve Yönetim Raporlama ajanları
+- ⬜ Sesli komut (cihaz üzerinde)
+- ⬜ Zamanlanmış görevler
+- ⬜ İkinci telefon desteği
 
 ## Faz 3 — E-posta ve Bilgisayar Kontrolü (≈6 hafta)
 
-- ⬜ Outlook okuma (Graph veya COM — Faz 0 kararına göre)
-- ⬜ E-posta ajanı: özetleme, taslak hazırlama; gönderme = critical onay
-- ⬜ Tarayıcı otomasyonu (Playwright, izole profil, site allowlist)
-- ⬜ Uygulama allowlist'i ile program açma
-- ⬜ Ekran yardımı (ekran görüntüsü yalnız kullanıcı isteğiyle, yerelde işlenir)
-- ⬜ Windows Hizmeti olarak çalışma değerlendirmesi
-- ⬜ OpenTelemetry gözlemlenebilirlik
+- ⬜ Outlook sürüm tespiti ve entegrasyon yöntemi (ADR)
+- ⬜ E-posta ajanı (gönderme işlemi `critical` olarak sınıflanır)
+- ⬜ Tarayıcı otomasyonu
+- ⬜ Uygulama allowlist'i
+- ⬜ Ekran yardımı
+- ⬜ Windows Hizmeti değerlendirmesi
 
-## Faz 4 — Kontrollü Yazma ve Ölçek
+## Faz 4 — Kontrollü Yazma, Ölçek ve Denetim
 
-- ⬜ ERP kontrollü yazma (`ErpWriteConnector`, ayrı kimlik bilgisi, her işlem onaylı)
-- ⬜ Çoklu organizasyon, gelişmiş RBAC
-- ⬜ Redis/BullMQ'ya geçiş (gerekirse)
-- ⬜ Harici güvenlik testi (penetrasyon testi)
-- ⬜ iOS ve web paneli değerlendirmesi
-
-## Riskler
-
-| Risk | Etki | Önlem |
-|---|---|---|
-| ASEDEN'e salt okunur erişim alınamaması | ERP ajanları gecikir | Faz 2'de dışa aktarılmış Excel raporları üzerinden çalışma alternatifi |
-| Kurumsal antivirüs/EDR'nin ajanı engellemesi | Kurulum sorunları | Kod imzalama, IT ile beyaz liste süreci |
-| AI sağlayıcıya veri gönderiminin müşteri sözleşmeleriyle çakışması | Özellik kısıtlanır | Yerel model + DataGuard varsayılanı |
-| Kapsam genişlemesi | Gecikme | Her faz sonunda kapsam onayı |
-
-## Sonraki Adım
-
-Bu dokümanlar onaylandığında **Faz 0** başlatılacaktır. Faz 0 tamamlanmadan MVP kodlamasına geçilmeyecektir.
+- ⬜ ERP kontrollü yazma
+- ⬜ 4-göz onayı
+- ⬜ Çoklu organizasyon
+- ⬜ Harici penetrasyon testi ve kripto protokol incelemesi
