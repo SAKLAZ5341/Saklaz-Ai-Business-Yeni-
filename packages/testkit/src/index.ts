@@ -57,6 +57,8 @@ export class PhoneSim {
   private pendingPair: { qr: QrPayload; addEntry: RosterEntry } | undefined;
   /** Doğrulanmış, ajandan gelen mesajlar. */
   readonly inbox: InnerMessage[] = [];
+  /** Çözülemeyen veya doğrulanamayan çerçeveler (teşhis için). */
+  readonly errors: string[] = [];
 
   constructor(
     readonly id: string,
@@ -146,7 +148,7 @@ export class PhoneSim {
     this.pendingPair = { qr, addEntry };
     const payload = { phoneId: this.id, ws: this.ws, entries: this.roster.all(), addEntry };
     const box = sealPairingMessage(fromB64(qr.secret), "pair-req", qr.sessionId, utf8(JSON.stringify(payload)));
-    return { to: qr.agentId, kind: "pair" as WireKind, ct: toB64(concat(box.nonce, box.ciphertext)) };
+    return { to: qr.agentId, kind: "pair", ct: toB64(concat(box.nonce, box.ciphertext)) };
   }
 
   /** Bilgisayardan "pair-ok" gelince: ajan imzasını doğrula, eş-imzalı girişi ekle, bağı kur. */
@@ -188,7 +190,14 @@ export class PhoneSim {
     const out: WireOut[] = [];
     for (const f of frames) {
       if (f.kind === "pair" || !this.channel) continue;
-      const r = this.channel.receive(f.from, f.kind, f.ct);
+      let r;
+      try {
+        r = this.channel.receive(f.from, f.kind, f.ct);
+      } catch (e) {
+        // Gerçek uygulama gibi: çözülemeyen tek çerçeve kaydedilir, grubun geri kalanı işlenir.
+        this.errors.push(e instanceof Error ? e.message : String(e));
+        continue;
+      }
       out.push(...r.replies);
       if (r.plaintext) {
         const msg = decodeInnerMessage(r.plaintext);

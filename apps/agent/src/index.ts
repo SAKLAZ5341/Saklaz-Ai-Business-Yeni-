@@ -4,3 +4,4 @@ export { Lockdown, type LocalAuthenticator, type LockdownInfo } from "./lockdown
 export { RollbackGuard, type RollbackStatus } from "./rollback.js";
 export { MemoryVault, InsecureFileVault, type SecretVault } from "./vault.js";
 export { openAgentDb, getMeta, setMeta, type AgentDb } from "./db.js";
+export { RelayClient, ttlFor, type RelayClientOptions } from "./transport.js";

@@ -1,0 +1,30 @@
+{
+  "name": "@saklaz/relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SAKLAZ AI relay sunucusu — kör aktarıcı: hesap + TOTP, cihaz kimlik doğrulama, uçtan uca şifreli zarf yönlendirme, süreli kuyruk, çevrimiçi durumu, meta veri denetim kaydı. İçerik görmez.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@node-rs/argon2": "2.2.2",
+    "@saklaz/crypto": "workspace:*",
+    "@saklaz/protocol": "workspace:*",
+    "fastify": "5.12.8",
+    "jose": "6.2.17",
+    "pg": "8.23.1",
+    "ws": "8.22.2",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@saklaz/agent": "workspace:*",
+    "@saklaz/testkit": "workspace:*",
+    "@types/pg": "8.23.1",
+    "@types/ws": "8.18.2"
+  }
+}

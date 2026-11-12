@@ -14,6 +14,7 @@
  * düşürmesine karşı bir kullanılabilirlik önlemidir; bir güvenlik garantisi değildir (SECURITY.md §21).
  */
 import {
+  blake2b,
   concat,
   CryptoError,
   fromB64,
@@ -31,7 +32,8 @@ export type WireKind = "sealed" | "hs1" | "hs2" | "noise";
 
 export interface WireOut {
   to: string;
-  kind: WireKind;
+  /** "pair": eşleştirme mesajı (S ile şifrelenmiş; E2EChannel dışında üretilir). */
+  kind: WireKind | "pair";
   /** base64url */
   ct: string;
 }
@@ -50,7 +52,7 @@ export interface E2EOptions {
 export interface ReceiveResult {
   plaintext?: Uint8Array;
   replies: WireOut[];
-  event?: "session-established" | "session-reset" | "handshake-ignored";
+  event?: "session-established" | "session-reset" | "handshake-ignored" | "duplicate";
 }
 
 interface Session {
@@ -69,6 +71,13 @@ export class E2EError extends Error {
 export class E2EChannel {
   private readonly sessions = new Map<string, Session>();
   private readonly pending = new Map<string, NoiseKK>();
+  /**
+   * Yakın zamanda işlenmiş çerçevelerin özetleri ve verilen yanıtlar (karşı taraf başına, en çok 128).
+   * Relay en az bir kez teslim eder; yeniden bağlanma sonrası aynı çerçeve tekrar gelebilir.
+   * Yinelenen el sıkışmaya önceki yanıt aynen tekrarlanır; yinelenen Noise mesajı yok sayılır.
+   * Böylece yineleme oturumu bozmaz. Uygulama katmanındaki tekrar oynatma koruması ayrıca geçerlidir.
+   */
+  private readonly recent = new Map<string, Map<string, WireOut[]>>();
   private readonly maxAge: number;
   private readonly maxMsgs: number;
 
@@ -125,7 +134,35 @@ export class E2EChannel {
     return out;
   }
 
-  receive(from: string, kind: WireKind, ctB64: string): ReceiveResult {
+  private digest(kind: string, ct: string): string {
+    return toB64(blake2b(utf8(`${kind}|${ct}`), 16));
+  }
+
+  private remember(from: string, d: string, replies: WireOut[]): void {
+    let m = this.recent.get(from);
+    if (!m) {
+      m = new Map();
+      this.recent.set(from, m);
+    }
+    m.set(d, replies);
+    if (m.size > 128) {
+      const oldest = m.keys().next().value;
+      if (oldest !== undefined) m.delete(oldest);
+    }
+  }
+
+  receive(from: string, kind: WireKind | "pair", ctB64: string): ReceiveResult {
+    // Eşleştirme mesajları uçtan uca kanaldan geçmez (S ile şifrelidir); burada reddedilir.
+    if (kind === "pair") throw new E2EError("BAD_FRAME");
+    const d = this.digest(kind, ctB64);
+    const seen = this.recent.get(from)?.get(d);
+    if (seen && kind !== "sealed") return { replies: seen, event: "duplicate" };
+    const r = this.receiveInner(from, kind, ctB64);
+    if (kind === "hs1" || kind === "noise") this.remember(from, d, kind === "hs1" ? r.replies : []);
+    return r;
+  }
+
+  private receiveInner(from: string, kind: WireKind, ctB64: string): ReceiveResult {
     let ct: Uint8Array;
     try {
       ct = fromB64(ctB64);

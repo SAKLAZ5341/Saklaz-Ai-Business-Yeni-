@@ -63,6 +63,7 @@ describe("uçtan uca kanal", () => {
     const { a, b } = pair();
     expect(() => a.send("dev_unknownPeer0000000000", utf8("x"))).toThrowError(E2EError);
     expect(() => b.receive(A, "sealed", "!!!")).toThrowError(E2EError);
+    expect(() => b.receive(A, "pair", "QUJD")).toThrowError(E2EError);
     expect(() => b.receive(A, "sealed", toB64(new Uint8Array(10)))).toThrowError(E2EError);
     expect(() => b.receive(A, "sealed", toB64(new Uint8Array(100)))).toThrowError(E2EError);
   });
@@ -122,6 +123,32 @@ describe("uçtan uca kanal", () => {
     const bad = toB64(new Uint8Array(48).fill(7));
     expect(() => b.receive(A, "hs1", bad)).toThrowError(E2EError);
     expect(() => a.receive(B, "hs2", bad)).toThrowError(E2EError);
+  });
+});
+
+describe("yinelenen teslim (relay en az bir kez teslim eder)", () => {
+  it("aynı el sıkışma iki kez gelirse oturum bozulmaz; önceki yanıt aynen tekrarlanır", () => {
+    const { a, b } = pair();
+    const first = a.send(B, utf8("bir"));
+    const r1 = deliver(b, A, first);
+    const r2 = deliver(b, A, first); // relay aynı çerçeveleri yeniden iletti
+    expect(r2.events).toContain("duplicate");
+    expect(r2.replies).toEqual(r1.replies.filter((o) => o.kind === "hs2"));
+    deliver(a, B, r1.replies);
+    deliver(a, B, r2.replies); // ikinci hs2 yok sayılır
+    expect(deliver(a, B, b.send(A, utf8("yanıt"))).texts).toEqual(["yanıt"]);
+    expect(deliver(b, A, a.send(B, utf8("devam"))).texts).toEqual(["devam"]);
+  });
+
+  it("aynı Noise mesajı iki kez gelirse ikincisi yok sayılır ve oturum sürer", () => {
+    const { a, b } = pair();
+    deliver(a, B, deliver(b, A, a.send(B, utf8("x"))).replies);
+    const m = a.send(B, utf8("tek sefer"));
+    expect(deliver(b, A, m).texts).toEqual(["tek sefer"]);
+    const again = deliver(b, A, m);
+    expect(again.texts).toEqual([]);
+    expect(again.events).toContain("duplicate");
+    expect(deliver(b, A, a.send(B, utf8("sonraki"))).texts).toEqual(["sonraki"]);
   });
 });
 

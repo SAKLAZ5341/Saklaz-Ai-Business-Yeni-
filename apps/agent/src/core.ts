@@ -408,8 +408,17 @@ export class AgentCore {
       // Telefonun listesini doğrula ve bu bilgisayarın ekleme girişinin gerçekten BU cihazı eklediğini denetle.
       const log = RosterLog.fromEntries(req.entries);
       if (log.current.ws !== req.ws) throw new Error("alan uyuşmuyor");
+      // Yalnızca güvenlikle ilgili alanlar karşılaştırılır (tür, kimlik, anahtarlar). Görünen ad (label)
+      // kullanıcının telefonda verdiği bir isimdir; şema düzeyinde kontrol karakterlerine karşı süzülür.
       const added = (req.addEntry.body as { device?: RosterDevice }).device;
-      if (req.addEntry.op !== "device.add" || JSON.stringify(added) !== JSON.stringify(this.descriptor())) {
+      const me = this.descriptor();
+      if (
+        req.addEntry.op !== "device.add" ||
+        added?.kind !== "computer" ||
+        added.deviceId !== me.deviceId ||
+        added.signPub !== me.signPub ||
+        added.dhPub !== me.dhPub
+      ) {
         throw new Error("ekleme girişi bu cihazı tanımlamıyor");
       }
       const phone = log.current.devices.get(req.phoneId);
@@ -459,7 +468,7 @@ export class AgentCore {
     const agentSig = toB64(sign("SAKLAZ-v1/pair", transcript, this.sign.secretKey));
     const box = sealPairingMessage(p.secret, "pair-ok", p.sessionId, utf8(JSON.stringify({ entry: cosigned, agentSig })));
     this.audit.append("pairing.completed", { phoneId: p.phone.phoneId, ws: p.phone.ws, head: log.head().seq }, this.now());
-    return { to: p.phone.phoneId, kind: "pair" as WireKind, ct: toB64(concat(box.nonce, box.ciphertext)) };
+    return { to: p.phone.phoneId, kind: "pair", ct: toB64(concat(box.nonce, box.ciphertext)) };
   }
 
   close(): void {
