@@ -1,0 +1,17 @@
+{
+  "name": "@saklaz/crypto",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SAKLAZ AI kriptografi katmanı: libsodium üzerine ince sarmalayıcı (imza, X25519, AEAD, HKDF, Noise_KK, mühürlü zarf, SAS).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --coverage"
+  },
+  "dependencies": {
+    "libsodium-wrappers-sumo": "0.8.4"
+  }
+}

@@ -1,0 +1,15 @@
+name: saklaz_vector_check
+description: >
+  SAKLAZ AI — Dart tarafının kanonik JSON ve imza uygulamasının, TypeScript tarafıyla
+  birebir aynı baytları ürettiğini doğrulayan uyumluluk testi (SECURITY.md S13).
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+
+dependencies:
+  cryptography: 2.7.0
+
+dev_dependencies:
+  test: 1.25.8

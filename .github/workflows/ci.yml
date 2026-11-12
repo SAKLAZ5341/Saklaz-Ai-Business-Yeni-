@@ -1,0 +1,82 @@
+# SAKLAZ AI — CI kapıları (FAZ1-PLAN §10.2). Bu kontrollerin hepsi geçmeden main'e birleştirme yapılmaz.
+# Üçüncü taraf eylemler mutable etiketle değil, commit SHA ile sabitlenmiştir (tedarik zinciri güvenliği).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typescript:
+    name: TypeScript (lint, sınır, tip, test) — ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows: ajan Windows'ta çalışacak; kripto (libsodium WASM) orada da doğrulanır.
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm check:boundaries
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  dart-vectors:
+    name: Dart uyumluluk vektörleri (S13)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dart-lang/setup-dart@e51d8e571e22473a2ddebf0ef8a2123f0ab2c02c # v1.7.1
+        with:
+          sdk: 3.5.4
+      - working-directory: apps/mobile/vector_check
+        run: |
+          dart pub get
+          dart test
+
+  windows-inventory:
+    name: Windows envanter betiği (Pester, D6)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Pester 5.7.1
+        shell: pwsh
+        run: Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser -SkipPublisherCheck
+      - name: Testler (değişiklik yapmama anlık görüntü testi dahil)
+        shell: pwsh
+        run: |
+          Import-Module Pester -RequiredVersion 5.7.1
+          $c = New-PesterConfiguration
+          $c.Run.Path = 'tools/discovery/windows-envanter.Tests.ps1'
+          $c.Run.Exit = $true
+          $c.Output.Verbosity = 'Detailed'
+          Invoke-Pester -Configuration $c
+
+  secrets:
+    name: Gizli bilgi taraması (gitleaks)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - name: gitleaks 8.28.0 (sağlama toplamı doğrulanmış)
+        run: |
+          curl -sSL -o gl.tgz https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz
+          echo "a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb  gl.tgz" | sha256sum -c -
+          tar xzf gl.tgz gitleaks
+          ./gitleaks git . --redact --no-banner
