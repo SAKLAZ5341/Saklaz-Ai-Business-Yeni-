@@ -83,7 +83,7 @@ Ek kurallar:
 
 ### 5.1 Oturum
 
-- **Protokol:** `Noise_KK_25519_ChaChaPoly_BLAKE2s`. İki taraf da birbirinin statik X25519 anahtarını eşleştirmeden bilir. Bu sayede sunucu sahte bir taraf olarak araya giremez.
+- **Protokol:** `Noise_KK_25519_ChaChaPoly_BLAKE2b` (ADR-0008: libsodium BLAKE2s içermez). İki taraf da birbirinin statik X25519 anahtarını eşleştirmeden bilir. Bu sayede sunucu sahte bir taraf olarak araya giremez.
 - **İleri gizlilik:** Her oturumda geçici (ephemeral) anahtarlar kullanılır. Bu sayede bir anahtar sonradan ele geçirilse bile geçmiş trafik çözülemez.
 - **Oturum yenileme:** Oturum 24 saatte bir veya 10.000 mesajda bir yenilenir; hangisi önce olursa.
 - **Çevrimdışı alıcı:** Alıcı çevrimdışıyken gönderilen mesajlar için Noise oturumu kurulamaz. Bu durumda kullanılan şema şudur:
@@ -246,24 +246,26 @@ ciphertext içi (yalnızca cihazlar görür):
 
 ## 15. Kontrol Tablosu
 
+> ⬜ planlandı · 🟨 kısmen uygulandı (açıklamada ne eksik olduğu yazılı) · ✅ tamamen uygulandı ve CI'da testi geçiyor. GitHub CI henüz hiç çalışmadığı için şu an hiçbir kontrol ✅ değildir.
+
 | # | Kontrol | Faz | Durum |
 |---|---|---|---|
 | S1 | Argon2id + TOTP MFA + token rotasyonu | 1 | ⬜ |
 | S2 | QR + SAS ile relay'den bağımsız eşleştirme; ortadaki adam (MITM) testi | 1 | ⬜ |
-| S3 | Noise_KK E2EE; relay'in düz metin görmediğinin testi | 1 | ⬜ |
-| S4 | Yalnız imzalı komut kabulü; relay kaynaklı komut reddi testi | 1 | ⬜ |
-| S5 | Replay koruması (sayaç, zaman, nonce) | 1 | ⬜ |
-| S6 | İmzalı onay + özet + süre + tek kullanım | 1 | ⬜ |
+| S3 | Noise_KK E2EE; relay'in düz metin görmediğinin testi | 1 | 🟨 Noise_KK resmî vektörle doğrulandı (Sprint 1). Relay üzerinden düz metin testi Sprint 2'de. |
+| S4 | Yalnız imzalı komut kabulü; relay kaynaklı komut reddi testi | 1 | 🟨 Protokol düzeyinde uygulandı ve testli (Sprint 1). Ajan entegrasyonu Sprint 2–3'te. |
+| S5 | Replay koruması (sayaç, zaman, nonce) | 1 | 🟨 Kayan pencereli sayaç ve imzalı ömür testli (Sprint 1). Kalıcı depo (SQLite) Sprint 2'de. |
+| S6 | İmzalı onay + özet + süre + tek kullanım | 1 | 🟨 Protokol düzeyinde testli (Sprint 1). Telefon UI'ı ve araç entegrasyonu Sprint 3–4'te. |
 | S7 | Ajanın hiçbir port dinlememesi (port tarama testi) | 1 | ⬜ |
 | S8 | Klasör allowlist ve yol hileleri test seti | 1 | ⬜ |
 | S9 | DataGuard; `confidential` verinin dış sağlayıcıya gidememesi | 1 | ⬜ |
 | S10 | Hash zincirli denetim kayıtları ve doğrulayıcı | 1 | ⬜ |
 | S11 | Prompt injection regresyon paketi | 1 | ⬜ |
 | S12 | Electron güvenlik ayarları testi | 1 | ⬜ |
-| S13 | Çapraz platform kripto test vektörleri (TS ↔ Dart) | 1 | ⬜ |
+| S13 | Çapraz platform kripto test vektörleri (TS ↔ Dart) | 1 | 🟨 TS tarafı ve sapma testi hazır. **Dart testi yazıldı, henüz çalıştırılmadı.** |
 | S14 | İmzalı güncelleme doğrulaması | 1 | ⬜ |
 | S15 | ERP connector'da SELECT dışı ifade reddi ve salt okunur işlem | 2 | ⬜ |
-| S16 | Ele geçirilmiş relay senaryosu entegrasyon testi | 1 | ⬜ |
+| S16 | Ele geçirilmiş relay senaryosu entegrasyon testi | 1 | 🟨 Protokol düzeyi sahtecilik testleri hazır (Sprint 1). Gerçek relay ile entegrasyon testi Sprint 5'te. |
 
 ## 16. Açık Bildirimi
 

@@ -1,0 +1,59 @@
+SAKLAZ AI — Sprint 1 test çıktısı
+Tarih: 2026-11-12T17:27Z  Commit tabanı: 2f8c447
+Node v22.23.4, pnpm 10.28.0, PowerShell 7.4.6, Pester 5.7.1, gitleaks 8.28.0
+
+== Temiz kurulum ==
+Done in 1s using pnpm v10.28.0
+
+== Lint ==
+eslint: 0 hata
+
+== ERP sınır kontrolü ==
+Sınır kontrolü: OK (ERP bağımlılığı yok)
+
+== Tip denetimi ==
+crypto: OK
+protocol: OK
+
+== @saklaz/crypto testleri ==
+ ✓ test/primitives.test.ts (14 tests) 117ms
+ ✓ test/noise.test.ts (10 tests) 39ms
+ ✓ test/sealed-pairing.test.ts (6 tests) 21ms
+ ✓ test/edge-cases.test.ts (4 tests) 14ms
+ Test Files  4 passed (4)
+      Tests  34 passed (34)
+Statements   : 99.62% ( 537/539 )
+Branches     : 95.59% ( 152/159 )
+Functions    : 100% ( 65/65 )
+Lines        : 99.62% ( 537/539 )
+
+== @saklaz/protocol testleri ==
+ ✓ test/verifier.test.ts (16 tests) 208ms
+ ✓ test/approval.test.ts (11 tests) 43ms
+ ✓ test/message.test.ts (9 tests) 26ms
+ ✓ test/vectors.test.ts (6 tests) 26ms
+ ✓ test/jcs.test.ts (6 tests) 41ms
+ Test Files  5 passed (5)
+      Tests  48 passed (48)
+Statements   : 99.66% ( 603/605 )
+Branches     : 97.45% ( 153/157 )
+Functions    : 100% ( 42/42 )
+Lines        : 99.66% ( 603/605 )
+
+== Pester (windows-envanter.Tests.ps1, Linux PowerShell) ==
+  [+] sözdizimi hatası içermez 89ms (52ms|37ms)
+  [+] yalnızca izin verilen (salt okunur) komutları çağırır 7ms (5ms|1ms)
+  [+] yazma, silme, süreç başlatma veya veri gönderme komutu içermez 4ms (3ms|1ms)
+  [+] netsh yalnızca "show" alt komutuyla kullanılır 24ms (22ms|2ms)
+  [+] Test-NetConnection yalnızca -RelayTestUrl verildiğinde çalışan bloğun içindedir 68ms (67ms|1ms)
+  [+] hatasız tamamlanır ve tek bir geçerli JSON dosyası üretir 434ms (432ms|2ms)
+  [+] -RelayTestUrl verilmedikçe ağ bağlantısı denemez; verilirse yalnızca bir kez dener 496ms (495ms|1ms)
+  [!] kayıt defteri ve ortam değişkenleri değişmez 8ms (0ms|8ms)
+Tests Passed: 7, Failed: 0, Skipped: 1, Inconclusive: 0, NotRun: 0
+
+== gitleaks ==
+8:27PM INF 4 commits scanned.
+8:27PM INF no leaks found
+
+== Not ==
+Rapor öz denetiminde verifier.test.ts içindeki içi boş bir test kaldırıldı; protokol test sayısı 48'e güncellendi.

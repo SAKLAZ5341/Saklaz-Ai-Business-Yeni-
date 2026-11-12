@@ -209,7 +209,7 @@ interface AIProvider {
 | Relay DB | PostgreSQL 16 | Self-hosted'da olgun, yedeklemesi kolay. | — |
 | ORM | Drizzle | SQL'e yakın, şeffaf migration. | Prisma |
 | Kuyruk | PostgreSQL tabanlı (pg-boss) | Ek altyapı gerektirmez. | Redis/BullMQ (ölçek gerekirse) |
-| E2EE | Noise Protocol (`Noise_KK_25519_ChaChaPoly_BLAKE2s`) + Ed25519 uygulama imzaları | İleri gizlilik (forward secrecy), karşılıklı kimlik doğrulama, iyi analiz edilmiş bir çerçeve. | TLS mTLS (sunucuda sonlanır, K4'ü sağlamaz); Signal protokolü (çoklu cihaz grupları için fazla karmaşık) |
+| E2EE | Noise Protocol (`Noise_KK_25519_ChaChaPoly_BLAKE2b`; ADR-0008: libsodium BLAKE2s içermez) + Ed25519 uygulama imzaları | İleri gizlilik (forward secrecy), karşılıklı kimlik doğrulama, iyi analiz edilmiş bir çerçeve. | TLS mTLS (sunucuda sonlanır, K4'ü sağlamaz); Signal protokolü (çoklu cihaz grupları için fazla karmaşık) |
 | Kripto kütüphanesi | libsodium (JS: `libsodium-wrappers-sumo`, Dart: denetlenmiş bağlama) | Denetlenmiş, iki platformda da var. | WebCrypto (Ed25519/X25519 desteği platforma göre değişken) |
 | Doğrulama | zod | Tüm sınır noktalarında aynı şema. | — |
 | Masaüstü | Electron + React + Vite | TypeScript gereksinimi. | Tauri (Rust gerektirir) |

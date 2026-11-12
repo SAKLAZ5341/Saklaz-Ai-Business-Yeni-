@@ -315,7 +315,7 @@ Her adımın başarısızlığı **tipli bir hata** üretir ve denetim kaydına 
 
 ### 5.2 Noise oturumu
 
-- **Desen:** `Noise_KK_25519_ChaChaPoly_BLAKE2s`.
+- **Desen:** `Noise_KK_25519_ChaChaPoly_BLAKE2b` (ADR-0008: libsodium BLAKE2s içermez).
 - **Prologue (önsöz):** `"SAKLAZ-v1" || agentId || phoneId || proto`. Önsöz, oturumu cihaz kimliklerine ve protokol sürümüne bağlar; böylece sürüm düşürme (downgrade) saldırısı olamaz.
 - **Taşıma:** El sıkışma mesajları relay üzerinden normal zarflarla taşınır. Relay bunları ayırt edemez.
 - **Yenileme:** Oturum 24 saatte bir veya 10.000 mesajda bir yeniden kurulur; hangisi önce gelirse. Her iki taraf da yenileme başlatabilir.
@@ -662,3 +662,66 @@ Kurtarma prosedürleri (relay yeniden kurulumu, ajan geri yüklemesi, telefon ka
 - Tek telefonla kullanımda, telefon kaybolursa uzaktan erişim yeniden eşleştirmeye kadar durur. Bu bilinçli bir tasarım kararıdır.
 - Yerel model kalitesi ve hızı donanıma bağlıdır. Kural motoru her zaman çalışır, ama serbest dildeki komutları anlama yeteneği sınırlıdır.
 - Harici güvenlik denetimi Faz 4 öncesindedir. Faz 1 kendi testlerimizle doğrulanır; bağımsız bir denetimin yerini tutmaz.
+
+## 16. Faz 1 Onay Şartları ve Ek Güvenlik İstekleri (proje sahibi, 2026-11-12)
+
+### 16.1 Şartların karşılığı
+
+| # | Şart | Karşılığı | Durum |
+|---|---|---|---|
+| 1 | Güvenlik mimarisinden taviz yok | ADR 0001–0012; her sapma ADR ile kayda geçer | Sürekli |
+| 2 | Her uzaktan komut telefonda imzalı | `IncomingVerifier`: imzasız veya yanlış imzalı mesaj reddedilir | Sprint 1'de protokol düzeyinde testli |
+| 3 | Sunucu hiçbir koşulda kendi başına araç veya komut çalıştıramaz | Relay'in imza anahtarı yok. Kontrol mesajları ayrı şemada; "ele geçirilmiş relay" testleri yazıldı | Sprint 1'de protokol testli; S16 entegrasyon testi Sprint 5'te |
+| 4–5 | ERP ve şirket dosyaları testte kullanılmaz; yalnızca sentetik veri | §10.4. Test verileri `SAKLAZ-TEST` etiketli; CI'da ERP sınır kontrolü var | Sınır kontrolü Sprint 1'de çalışıyor (negatif testli) |
+| 6 | ASEDEN MVP dışı | `check-boundaries.mjs`, CI'da zorunlu | Sprint 1'de çalışıyor |
+| 7–8 | Sprint sonu test ve rapor; başarısız test gizlenmez | `docs/sprints/SPRINT-n-RAPOR.md`; ✅ yalnızca CI'da geçen testler için kullanılır | Sprint 1 raporu hazır |
+| 9 | Yerel git ve yedekleme düzeni | Her anlamlı adımda commit atılır. Proje belgeleri Claude Projesi'ne de kopyalanır | Sürekli |
+| 10 | Ajanın yetkileri kullanıcı tarafından sınırlandırılabilir | §7 yetenek modeli: tüm yetenekler varsayılan kapalı, klasör izinleri yerel | Sprint 3 |
+
+### 16.2 İşleme bağlı onay (uygulandı, ADR-0011)
+
+**Onayın kapsamı.** Telefonun imzaladığı özet şunların **tamamını** kapsar:
+
+- araç ve risk
+- özet metni
+- **tüm hedefler** (dosya, program, alıcı)
+- **tüm parametreler**
+- görev, adım ve onay kimlikleri
+- ajanın tek kullanımlık challenge değeri
+- süre
+
+**Değişikliğe karşı koruma.**
+
+- **Telefon tarafı:** Telefon özeti kendisi yeniden hesaplar. Gösterilecek içerik özetle uyuşmuyorsa onay ekranı hiç açılmaz.
+- **Ajan tarafı:** Ajan, aracı çalıştırmadan hemen önce özeti gerçek parametrelerden yeniden hesaplar. Tek bir fark varsa çalıştırma reddedilir.
+
+**Telefon arayüzü kuralları** (Sprint 4):
+
+- Özet metninin yanında hedef listesi ve parametreler **her zaman** gösterilir. Özet metni tek başına yeterli sayılmaz.
+- "Onayla" düğmesi, hedef listesinin sonuna kadar kaydırılmadan etkinleşmez.
+- Yön ve kontrol karakterleri şema düzeyinde reddedilir. Bu sayede `rapor‮gpj.exe` gibi görsel aldatmalar onay ekranına ulaşamaz (testli).
+
+### 16.3 Acil bağlantı kesme ve yetki iptali
+
+| Mekanizma | Nereden | Etki | Plan |
+|---|---|---|---|
+| **Acil kilit (yerel)** | Windows: masaüstü "ACİL DURDUR" düğmesi, sistem tepsisi ve genel kısayol tuşu | Relay bağlantısı hemen kesilir. Çalışan görevler güvenli bir noktada iptal edilir. Kilit kalıcıdır. **Kilit yalnızca yerelde, Windows Hello veya yönetici PIN'i ile açılır.** | Sprint 2: bağlantı kesme ve kalıcı kilit. Sprint 3: görev iptali. Sprint 4: arayüz ve kısayol. |
+| **Acil kilit (uzaktan)** | Telefon: imzalı `agent.lockdown` mesajı (`owner` ve `operator`) | Yerel kilitle aynı. Bilgisayar kapalıysa mesaj kuyrukta bekler (en çok 72 saat) ve bilgisayar açılınca **ilk iş** olarak uygulanır. | Mesaj tipi ve yetkisi Sprint 1'de protokolde. Ajan tarafı Sprint 2'de. |
+| **Cihaz iptali (yerel)** | Windows: "Cihazlar → İptal" (Windows Hello) | O telefonun anahtarı hemen ve kalıcı olarak reddedilir. Relay'e de bildirilir, ancak iptalin geçerliliği relay'e bağlı değildir. | Sprint 2 |
+| **Cihaz iptali (uzaktan)** | `owner` telefondan imzalı `device.revoke` | Başka bir telefonun yetkisi kaldırılır (`critical`, onay gerektirir) | Sprint 1'de protokolde. Ajan tarafı Sprint 2'de. |
+| **Hesap kapatma** | Relay yöneticisi | Hesabın relay'e bağlanması engellenir. Bu ek bir katmandır; asıl güven kökü cihazlardır. | Sprint 2 |
+
+**Önemli:** Relay, acil kilit veya iptal mesajı **uyduramaz** (imza gerekir) ve kilidi **açamaz** (açma işlemi yalnızca yereldir). Relay'in yapabileceği tek kötü şey bu mesajları geciktirmektir. Bu riske karşı yerel kilit her zaman çalışır.
+
+### 16.4 İşlem geçmişi
+
+- **Asıl kayıt** ajandaki hash zincirli denetim kaydıdır (Sprint 2). Bu kayıt şunları içerir: her komut ve imzası, plan, araç çağrıları, onaylar ve retler, reddedilen mesajlar (hata koduyla), acil kilit ve iptaller.
+- **Telefona aktarım:** `history.query` ve `history.page` mesajları Sprint 1'de protokolde tanımlandı. Telefon geçmiş ekranı Sprint 4'te yapılacak.
+- **Kurcalama tespiti:** Zincir başının imzalı kopyası telefona gönderilir. Bu sayede bilgisayarda kayıt silinirse fark edilir.
+
+### 16.5 Sprint planındaki değişiklikler
+
+| Sprint | Eklenen |
+|---|---|
+| Sprint 2 | Acil kilit (bağlantı kesme, kalıcı kilit, kuyruktan gelen kilidin ilk iş uygulanması), yerel ve uzaktan cihaz iptali, Dart kripto kütüphanesi kararı (ADR-0008), kod imzalama sağlayıcı kararı |
+| Sprint 4 | Onay ekranı kuralları (§16.2), ACİL DURDUR düğmesi ve kısayolu |

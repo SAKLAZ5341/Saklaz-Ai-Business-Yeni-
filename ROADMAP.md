@@ -65,7 +65,17 @@
 
 ## Faz 1 — MVP (≈10 hafta, 5 sprint)
 
-> Ayrıntılı plan: [docs/FAZ1-PLAN.md](docs/FAZ1-PLAN.md). **Plan onay bekliyor; geliştirme başlamadı.** MVP, ASEDEN keşfiyle paralel yürür ama ondan tamamen bağımsızdır ve yalnızca sentetik test verisi kullanır.
+> Ayrıntılı plan: [docs/FAZ1-PLAN.md](docs/FAZ1-PLAN.md). Plan proje sahibi tarafından onaylandı (2026-11-12). MVP, ASEDEN keşfiyle paralel yürür ama ondan tamamen bağımsızdır ve yalnızca sentetik test verisi kullanır.
+
+### Sprint durumu
+
+| Sprint | Durum | Rapor |
+|---|---|---|
+| S1 — Temel ve kripto | 🟨 Tamamlandı. Dart testi ve GitHub CI çalıştırması bekliyor. | [SPRINT-1-RAPOR.md](docs/sprints/SPRINT-1-RAPOR.md) |
+| S2 — Relay ve eşleştirme | ⏸ Proje sahibinin onayını bekliyor | — |
+| S3 — Ajan çekirdeği ve araçlar | ⬜ | — |
+| S4 — Android ve masaüstü | ⬜ | — |
+| S5 — Sağlamlaştırma | ⬜ | — |
 
 **Amaç:** Telefondan uçtan uca şifreli ve imzalı komutla Windows'ta dosya analizi ve rapor üretmek.
 

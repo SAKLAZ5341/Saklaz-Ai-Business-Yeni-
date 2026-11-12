@@ -9,7 +9,7 @@ import {
   ReplayGuard,
   CLOCK_SKEW_MS,
 } from "../src/index.js";
-import { AGENT_ID, bytesOf, makePhone, makeVerifier, NOW, send, setup, TASK, fakeB64 } from "./helpers.js";
+import { bytesOf, makePhone, makeVerifier, NOW, send, setup, TASK, fakeB64 } from "./helpers.js";
 
 beforeAll(setup);
 
@@ -195,9 +195,5 @@ describe("ele geçirilmiş relay senaryoları (K5: sunucu kendi başına komut �
     expect(code(() => makeVerifier([phone]).verify(bytesOf(extended), NOW))).toBe("SIGNATURE_INVALID");
     const retyped = { ...m, hdr: { ...m.hdr, type: "cmd.cancel" as const }, body: { taskId: TASK } };
     expect(code(() => makeVerifier([phone]).verify(bytesOf(retyped as never), NOW))).toBe("SIGNATURE_INVALID");
-  });
-
-  it("agentId sabittir: doğrulayıcı başka bir ajanın kimliğine ait mesajı kabul etmez", () => {
-    expect(AGENT_ID.startsWith("dev_")).toBe(true);
   });
 });
