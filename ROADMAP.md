@@ -45,8 +45,8 @@
 
 | Madde | Durum |
 |---|---|
-| Barındırma kararı (ARCHITECTURE.md §8.1, Seçenek A/B/C) | ⏸ Proje sahibi |
-| Push bildirim kararı (FCM veya self-hosted) | ⏸ Proje sahibi |
+| Barındırma kararı | ✅ Karar verildi: şirket içi VM, yalnızca 443 (2026-11-12) |
+| Push bildirim kararı | ✅ Karar verildi: FCM, yalnızca içeriksiz uyandırma (2026-11-12) |
 
 ### Altyapı
 
@@ -63,7 +63,9 @@
 
 > **Not:** ASEDEN keşfi MVP'yi **engellemez**, çünkü ERP MVP kapsamında değildir. Bu nedenle, Faz 0 belgeleri ve barındırma kararı onaylanırsa MVP, ASEDEN keşfiyle paralel yürüyebilir. Bu, proje sahibinin onayına bağlıdır.
 
-## Faz 1 — MVP (≈8–10 hafta)
+## Faz 1 — MVP (≈10 hafta, 5 sprint)
+
+> Ayrıntılı plan: [docs/FAZ1-PLAN.md](docs/FAZ1-PLAN.md). **Plan onay bekliyor; geliştirme başlamadı.** MVP, ASEDEN keşfiyle paralel yürür ama ondan tamamen bağımsızdır ve yalnızca sentetik test verisi kullanır.
 
 **Amaç:** Telefondan uçtan uca şifreli ve imzalı komutla Windows'ta dosya analizi ve rapor üretmek.
 
