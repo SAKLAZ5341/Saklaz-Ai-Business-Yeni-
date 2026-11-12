@@ -31,9 +31,13 @@ import {
   approvalSigningBytes,
   canonicalize,
   computeApprovalDigest,
+  cosignRosterEntry,
   messageSigningBytes,
   PROTOCOL_VERSION,
+  ROSTER_GENESIS_PREV,
+  rosterEntryHash,
   signInnerMessage,
+  signRosterEntry,
   type Header,
 } from "../src/index.js";
 
@@ -123,8 +127,61 @@ export async function generateVectors(): Promise<unknown> {
   // ---- İmzalı iç mesaj ----
   const AGENT = "dev_vectorAgent000000001";
   const PHONE = "dev_vectorPhone000000001";
+  const WS = "ws_vectorPersonal000001";
+
+  // ---- İmzalı cihaz listesi (ADR-0014) ----
+  const genesis = signRosterEntry(
+    {
+      ws: WS,
+      seq: 0,
+      prev: ROSTER_GENESIS_PREV,
+      ts: 1_794_000_000_000,
+      op: "genesis",
+      body: {
+        device: {
+          kind: "phone",
+          deviceId: PHONE,
+          label: "Ana telefon",
+          signPub: toB64(phoneSign.publicKey),
+          approvalPub: toB64(phoneApproval.publicKey),
+          dhPub: toB64(phoneDh.publicKey),
+          owner: true,
+        },
+        recoveryPub: null,
+        policy: { recoveryDelayHours: 72 },
+      },
+      signer: PHONE,
+    },
+    phoneApproval.secretKey,
+  );
+  const addAgent = cosignRosterEntry(
+    signRosterEntry(
+      {
+        ws: WS,
+        seq: 1,
+        prev: rosterEntryHash(genesis),
+        ts: 1_794_000_000_500,
+        op: "device.add",
+        body: { device: { kind: "computer", deviceId: AGENT, label: "Ev bilgisayarı", signPub: toB64(agentSign.publicKey), dhPub: toB64(agentDh.publicKey) } },
+        signer: PHONE,
+      },
+      phoneApproval.secretKey,
+    ),
+    agentSign.secretKey,
+  );
+  const link = signRosterEntry(
+    { ws: WS, seq: 2, prev: rosterEntryHash(addAgent), ts: 1_794_000_000_900, op: "link.set", body: { phoneId: PHONE, computerId: AGENT, role: "owner" }, signer: PHONE },
+    phoneApproval.secretKey,
+  );
+  const roster = {
+    entries: [genesis, addAgent, link],
+    hashes: [rosterEntryHash(genesis), rosterEntryHash(addAgent), rosterEntryHash(link)],
+  };
+
   const hdr: Header & { type: "cmd.create" } = {
     proto: PROTOCOL_VERSION,
+    ws: WS,
+    rh: { seq: 2, hash: rosterEntryHash(link) },
     type: "cmd.create",
     msgId: "01934b6e-0000-7000-8000-000000000042",
     from: PHONE,
@@ -147,6 +204,7 @@ export async function generateVectors(): Promise<unknown> {
 
   // ---- İşleme bağlı onay ----
   const approvalCtx = {
+    workspaceId: WS,
     agentId: AGENT,
     phoneId: PHONE,
     approvalId: "01934b6e-0000-7000-8000-000000000044",
@@ -165,6 +223,7 @@ export async function generateVectors(): Promise<unknown> {
   };
   const digest = toB64(computeApprovalDigest(approvalCtx));
   const approvalBytes = approvalSigningBytes({
+    workspaceId: WS,
     agentId: AGENT,
     phoneId: PHONE,
     approvalId: approvalCtx.approvalId,
@@ -183,7 +242,7 @@ export async function generateVectors(): Promise<unknown> {
   };
 
   return {
-    version: 1,
+    version: 2,
     protocol: PROTOCOL_VERSION,
     notes:
       "Tüm ikili değerler hex (…Hex) veya base64url dolgusuz (sig, digest, nonce, challenge). " +
@@ -194,6 +253,7 @@ export async function generateVectors(): Promise<unknown> {
     x25519,
     sas,
     sealed,
+    roster,
     message,
     approval,
   };

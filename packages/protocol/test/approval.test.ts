@@ -8,7 +8,7 @@ import {
   verifyApprovalRequestDigest,
   type ApprovalAction,
 } from "../src/index.js";
-import { AGENT_ID, makePhone, NOW, PHONE_ID, setup, TASK } from "./helpers.js";
+import { AGENT_ID, makePhone, NOW, OTHER_WS, PHONE_ID, setup, TASK, WS } from "./helpers.js";
 
 beforeAll(setup);
 
@@ -39,7 +39,7 @@ const approvalId = () => `01934b6e-0000-7000-8000-${String(++n).padStart(12, "0"
 
 function flow(action = deleteAction()) {
   const phone = makePhone();
-  const ledger = new ApprovalLedger(new MemoryApprovalStore(), AGENT_ID);
+  const ledger = new ApprovalLedger(new MemoryApprovalStore(), WS, AGENT_ID);
   const id = approvalId();
   const req = ledger.createRequest({ approvalId: id, phoneId: PHONE_ID, taskId: TASK, stepId: "s1", action, nowMs: NOW });
   return { phone, ledger, req, id, action };
@@ -48,7 +48,7 @@ function flow(action = deleteAction()) {
 describe("işleme bağlı onay", () => {
   it("tam akış: istek → telefon kendi özetini doğrular → imzalar → ajan doğrular → aynı parametrelerle çalışır", () => {
     const { phone, ledger, req, action } = flow();
-    const dec = signApprovalDecision({ agentId: AGENT_ID, phoneId: PHONE_ID, request: req, decision: "approve", approvalSecretKey: phone.approval.secretKey });
+    const dec = signApprovalDecision({ workspaceId: WS, agentId: AGENT_ID, phoneId: PHONE_ID, request: req, decision: "approve", approvalSecretKey: phone.approval.secretKey });
     const rec = ledger.consumeDecision(PHONE_ID, dec, phone.approval.publicKey, NOW + 30_000);
     expect(rec.state).toBe("approved");
     expect(() => ledger.assertExecutionMatches(req.approvalId, { taskId: TASK, stepId: "s1", action })).not.toThrow();
@@ -56,7 +56,7 @@ describe("işleme bağlı onay", () => {
 
   it("onaydan SONRA parametre değiştirilirse çalıştırma reddedilir (hedef dosya eklenmiş)", () => {
     const { phone, ledger, req, action } = flow();
-    const dec = signApprovalDecision({ agentId: AGENT_ID, phoneId: PHONE_ID, request: req, decision: "approve", approvalSecretKey: phone.approval.secretKey });
+    const dec = signApprovalDecision({ workspaceId: WS, agentId: AGENT_ID, phoneId: PHONE_ID, request: req, decision: "approve", approvalSecretKey: phone.approval.secretKey });
     ledger.consumeDecision(PHONE_ID, dec, phone.approval.publicKey, NOW + 1000);
     const changed: ApprovalAction = {
       ...action,
@@ -77,22 +77,22 @@ describe("işleme bağlı onay", () => {
     const { req } = flow();
     // Özet değişmeden hedef listesi kurcalanırsa (ör. relay veya hatalı ajan)
     const tampered = { ...req, action: { ...req.action, targets: req.action.targets.slice(0, 1) } };
-    expect(code(() => verifyApprovalRequestDigest(AGENT_ID, PHONE_ID, tampered))).toBe("APPROVAL_MISMATCH");
+    expect(code(() => verifyApprovalRequestDigest(WS, AGENT_ID, PHONE_ID, tampered))).toBe("APPROVAL_MISMATCH");
     const sneaky = { ...req, action: { ...req.action, summary: "Rapor oluşturulacak" } };
-    expect(code(() => verifyApprovalRequestDigest(AGENT_ID, PHONE_ID, sneaky))).toBe("APPROVAL_MISMATCH");
-    expect(code(() => verifyApprovalRequestDigest(AGENT_ID, "dev_baskaTelefonCCCCCCCCC", req))).toBe("APPROVAL_MISMATCH");
+    expect(code(() => verifyApprovalRequestDigest(WS, AGENT_ID, PHONE_ID, sneaky))).toBe("APPROVAL_MISMATCH");
+    expect(code(() => verifyApprovalRequestDigest(WS, AGENT_ID, "dev_baskaTelefonCCCCCCCCC", req))).toBe("APPROVAL_MISMATCH");
   });
 
   it("onay tek kullanımlıktır: ikinci kullanım reddedilir", () => {
     const { phone, ledger, req } = flow();
-    const dec = signApprovalDecision({ agentId: AGENT_ID, phoneId: PHONE_ID, request: req, decision: "approve", approvalSecretKey: phone.approval.secretKey });
+    const dec = signApprovalDecision({ workspaceId: WS, agentId: AGENT_ID, phoneId: PHONE_ID, request: req, decision: "approve", approvalSecretKey: phone.approval.secretKey });
     ledger.consumeDecision(PHONE_ID, dec, phone.approval.publicKey, NOW + 1000);
     expect(code(() => ledger.consumeDecision(PHONE_ID, dec, phone.approval.publicKey, NOW + 2000))).toBe("APPROVAL_USED");
   });
 
   it("süresi dolan onay geçersizdir ve sonra tekrar denenemez; süre ajanın saatiyle ölçülür", () => {
     const { phone, ledger, req } = flow();
-    const dec = signApprovalDecision({ agentId: AGENT_ID, phoneId: PHONE_ID, request: req, decision: "approve", approvalSecretKey: phone.approval.secretKey });
+    const dec = signApprovalDecision({ workspaceId: WS, agentId: AGENT_ID, phoneId: PHONE_ID, request: req, decision: "approve", approvalSecretKey: phone.approval.secretKey });
     expect(code(() => ledger.consumeDecision(PHONE_ID, dec, phone.approval.publicKey, NOW + 600_001))).toBe("APPROVAL_EXPIRED");
     expect(code(() => ledger.consumeDecision(PHONE_ID, dec, phone.approval.publicKey, NOW + 1000))).toBe("APPROVAL_USED");
     expect(code(() => ledger.assertExecutionMatches(req.approvalId, { taskId: TASK, stepId: "s1", action: req.action }))).toBe(
@@ -100,24 +100,24 @@ describe("işleme bağlı onay", () => {
     );
     // Ajan saati geri alınmışsa (verilme zamanından önce) da reddedilir
     const f = flow();
-    const d2 = signApprovalDecision({ agentId: AGENT_ID, phoneId: PHONE_ID, request: f.req, decision: "approve", approvalSecretKey: f.phone.approval.secretKey });
+    const d2 = signApprovalDecision({ workspaceId: WS, agentId: AGENT_ID, phoneId: PHONE_ID, request: f.req, decision: "approve", approvalSecretKey: f.phone.approval.secretKey });
     expect(code(() => f.ledger.consumeDecision(PHONE_ID, d2, f.phone.approval.publicKey, NOW - 1))).toBe("APPROVAL_EXPIRED");
   });
 
   it("onay, komut anahtarıyla değil yalnızca ayrı onay anahtarıyla geçerlidir", () => {
     const { phone, ledger, req } = flow();
-    const dec = signApprovalDecision({ agentId: AGENT_ID, phoneId: PHONE_ID, request: req, decision: "approve", approvalSecretKey: phone.sign.secretKey });
+    const dec = signApprovalDecision({ workspaceId: WS, agentId: AGENT_ID, phoneId: PHONE_ID, request: req, decision: "approve", approvalSecretKey: phone.sign.secretKey });
     expect(code(() => ledger.consumeDecision(PHONE_ID, dec, phone.approval.publicKey, NOW + 1000))).toBe("APPROVAL_WRONG_SIGNER");
   });
 
   it("başka telefonun kararı, kurcalanmış karar ve yanlış challenge reddedilir", () => {
     const { phone, ledger, req } = flow();
-    const dec = signApprovalDecision({ agentId: AGENT_ID, phoneId: PHONE_ID, request: req, decision: "approve", approvalSecretKey: phone.approval.secretKey });
+    const dec = signApprovalDecision({ workspaceId: WS, agentId: AGENT_ID, phoneId: PHONE_ID, request: req, decision: "approve", approvalSecretKey: phone.approval.secretKey });
     expect(code(() => ledger.consumeDecision("dev_baskaTelefonCCCCCCCCC", dec, phone.approval.publicKey, NOW + 1000))).toBe(
       "APPROVAL_WRONG_SIGNER",
     );
     // Ret imzası onay olarak gösterilemez
-    const rejectSig = signApprovalDecision({ agentId: AGENT_ID, phoneId: PHONE_ID, request: req, decision: "reject", approvalSecretKey: phone.approval.secretKey });
+    const rejectSig = signApprovalDecision({ workspaceId: WS, agentId: AGENT_ID, phoneId: PHONE_ID, request: req, decision: "reject", approvalSecretKey: phone.approval.secretKey });
     expect(code(() => ledger.consumeDecision(PHONE_ID, { ...rejectSig, decision: "approve" }, phone.approval.publicKey, NOW + 1000))).toBe(
       "APPROVAL_WRONG_SIGNER",
     );
@@ -131,7 +131,7 @@ describe("işleme bağlı onay", () => {
 
   it("ret kararı kaydı tüketir ve çalıştırmaya izin vermez", () => {
     const { phone, ledger, req } = flow();
-    const dec = signApprovalDecision({ agentId: AGENT_ID, phoneId: PHONE_ID, request: req, decision: "reject", approvalSecretKey: phone.approval.secretKey });
+    const dec = signApprovalDecision({ workspaceId: WS, agentId: AGENT_ID, phoneId: PHONE_ID, request: req, decision: "reject", approvalSecretKey: phone.approval.secretKey });
     expect(ledger.consumeDecision(PHONE_ID, dec, phone.approval.publicKey, NOW + 1000).state).toBe("rejected");
     expect(code(() => ledger.assertExecutionMatches(req.approvalId, { taskId: TASK, stepId: "s1", action: req.action }))).toBe(
       "APPROVAL_NOT_GRANTED",
@@ -140,7 +140,7 @@ describe("işleme bağlı onay", () => {
 
   it("bilinmeyen onay kimliği ve tekrar kullanılan kimlik reddedilir", () => {
     const { phone, ledger, req, id } = flow();
-    const dec = signApprovalDecision({ agentId: AGENT_ID, phoneId: PHONE_ID, request: req, decision: "approve", approvalSecretKey: phone.approval.secretKey });
+    const dec = signApprovalDecision({ workspaceId: WS, agentId: AGENT_ID, phoneId: PHONE_ID, request: req, decision: "approve", approvalSecretKey: phone.approval.secretKey });
     expect(code(() => ledger.consumeDecision(PHONE_ID, { ...dec, approvalId: approvalId() }, phone.approval.publicKey, NOW))).toBe(
       "APPROVAL_UNKNOWN",
     );
@@ -152,6 +152,16 @@ describe("işleme bağlı onay", () => {
     );
   });
 
+  it("çalışma alanı izolasyonu: BUSINESS alanında hesaplanan özet PERSONAL alanındaki isteği karşılamaz", () => {
+    const { req } = flow();
+    expect(code(() => verifyApprovalRequestDigest(OTHER_WS, AGENT_ID, PHONE_ID, req))).toBe("APPROVAL_MISMATCH");
+    const { phone, req: r2 } = flow();
+    // Telefon, isteği yanlışlıkla diğer alanın bağlamıyla imzalamaya çalışırsa kendi doğrulaması reddeder
+    expect(code(() => signApprovalDecision({ workspaceId: OTHER_WS, agentId: AGENT_ID, phoneId: PHONE_ID, request: r2, decision: "approve", approvalSecretKey: phone.approval.secretKey }))).toBe(
+      "APPROVAL_MISMATCH",
+    );
+  });
+
   it("her challenge benzersizdir; aynı işlem için iki istek farklı özet üretir", () => {
     const a = flow();
     const b = flow();
@@ -160,7 +170,7 @@ describe("işleme bağlı onay", () => {
   });
 
   it("özet, parametre nesnesinin anahtar sırasından bağımsızdır (kanonik JSON)", () => {
-    const base = { agentId: AGENT_ID, phoneId: PHONE_ID, approvalId: approvalId(), taskId: TASK, stepId: "s1", challenge: "x", issuedAt: NOW, expiresInSec: 600 };
+    const base = { workspaceId: WS, agentId: AGENT_ID, phoneId: PHONE_ID, approvalId: approvalId(), taskId: TASK, stepId: "s1", challenge: "x", issuedAt: NOW, expiresInSec: 600 };
     const a1 = { ...deleteAction(), params: { a: 1, b: 2 } };
     const a2 = { ...deleteAction(), params: { b: 2, a: 1 } };
     expect(computeApprovalDigest({ ...base, action: a1 })).toEqual(computeApprovalDigest({ ...base, action: a2 }));

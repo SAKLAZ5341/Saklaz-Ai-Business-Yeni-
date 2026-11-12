@@ -11,7 +11,10 @@ import {
   uuidv7,
   verifyInnerMessageSignature,
 } from "../src/index.js";
-import { AGENT_ID, makePhone, NOW, send, setup, TASK } from "./helpers.js";
+import { AGENT_ID, makePhone, NOW, send, setup, TASK, WS } from "./helpers.js";
+
+// fakeB64 kripto başlatıldıktan sonra çağrılabilir; sıfır özetin metin karşılığı sabit yazıldı.
+const RH = { seq: 0, hash: "A".repeat(43) };
 
 beforeAll(setup);
 
@@ -46,7 +49,7 @@ describe("imzalı iç mesaj", () => {
 
   it("şemaya uymayan mesaj hiçbir zaman imzalanmaz", () => {
     const p = makePhone();
-    const hdr = buildHeader({ type: "cmd.create", from: p.id, to: AGENT_ID, ctr: 1, ts: NOW });
+    const hdr = buildHeader({ type: "cmd.create", ws: WS, rh: RH, from: p.id, to: AGENT_ID, ctr: 1, ts: NOW });
     // bilinmeyen alan
     expect(code(() => signInnerMessage(hdr, { taskId: TASK, text: "x", extra: 1 } as never, p.sign))).toBe(
       "SCHEMA_INVALID",
@@ -57,7 +60,7 @@ describe("imzalı iç mesaj", () => {
 
   it("onay ekranını yanıltabilecek yön/kontrol karakterleri reddedilir", () => {
     const p = makePhone();
-    const hdr = buildHeader({ type: "cmd.create", from: p.id, to: AGENT_ID, ctr: 1, ts: NOW });
+    const hdr = buildHeader({ type: "cmd.create", ws: WS, rh: RH, from: p.id, to: AGENT_ID, ctr: 1, ts: NOW });
     expect(code(() => signInnerMessage(hdr, { taskId: TASK, text: "rapor‮gpj.exe" }, p.sign))).toBe(
       "SCHEMA_INVALID",
     );
@@ -66,12 +69,12 @@ describe("imzalı iç mesaj", () => {
 
   it("ömür sınırları: exp ≤ ts ve tipin üst sınırını aşan ömür reddedilir", () => {
     const p = makePhone();
-    const hdr = buildHeader({ type: "history.query", from: p.id, to: AGENT_ID, ctr: 1, ts: NOW, lifetimeMs: 3_600_000 });
+    const hdr = buildHeader({ type: "history.query", ws: WS, rh: RH, from: p.id, to: AGENT_ID, ctr: 1, ts: NOW, lifetimeMs: 3_600_000 });
     expect(code(() => signInnerMessage(hdr, { sinceSeq: 0, limit: 10 }, p.sign))).toBe("EXPIRY_TOO_LONG");
-    const bad = { ...buildHeader({ type: "history.query", from: p.id, to: AGENT_ID, ctr: 1, ts: NOW }), exp: NOW };
+    const bad = { ...buildHeader({ type: "history.query", ws: WS, rh: RH, from: p.id, to: AGENT_ID, ctr: 1, ts: NOW }), exp: NOW };
     expect(code(() => signInnerMessage(bad, { sinceSeq: 0, limit: 10 }, p.sign))).toBe("SCHEMA_INVALID");
     // cmd.create çevrimdışı bilgisayar için 72 saate kadar kuyrukta bekleyebilir
-    const q = buildHeader({ type: "cmd.create", from: p.id, to: AGENT_ID, ctr: 1, ts: NOW, lifetimeMs: 72 * 3_600_000 });
+    const q = buildHeader({ type: "cmd.create", ws: WS, rh: RH, from: p.id, to: AGENT_ID, ctr: 1, ts: NOW, lifetimeMs: 72 * 3_600_000 });
     expect(() => signInnerMessage(q, { taskId: TASK, text: "x" }, p.sign)).not.toThrow();
   });
 

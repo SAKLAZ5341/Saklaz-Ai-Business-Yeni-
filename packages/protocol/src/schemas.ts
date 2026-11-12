@@ -37,6 +37,9 @@ export const Uuid = z
 
 export const DeviceId = z.string().regex(/^dev_[A-Za-z0-9_-]{16,64}$/, "cihaz kimliği biçimi geçersiz");
 
+/** Çalışma alanı kimliği (ADR-0013). PERSONAL ve BUSINESS alanlarının kimlikleri farklıdır. */
+export const WorkspaceId = z.string().regex(/^ws_[A-Za-z0-9_-]{16,64}$/, "çalışma alanı kimliği biçimi geçersiz");
+
 export const EpochMs = z.number().int().min(1_600_000_000_000).max(Number.MAX_SAFE_INTEGER);
 
 const SafeText = (max: number, min = 0) =>
@@ -81,7 +84,7 @@ export const PHONE_TO_AGENT_TYPES = [
   "approval.decision",
   "history.query",
   "file.request",
-  "device.revoke",
+  "roster.append",
   "grant.request",
   "agent.lockdown",
   "ack",
@@ -92,6 +95,7 @@ export const AGENT_TO_PHONE_TYPES = [
   "approval.request",
   "history.page",
   "file.offer",
+  "roster.need",
   "ack",
 ] as const;
 
@@ -109,7 +113,9 @@ const HOUR = 60 * MINUTE;
 export const MAX_LIFETIME_MS: Record<MessageType, number> = {
   "cmd.create": 72 * HOUR,
   "cmd.cancel": 72 * HOUR,
-  "device.revoke": 72 * HOUR,
+  // İptal artık imzalı liste girişidir (ADR-0014); kuyrukta 72 saate kadar bekleyebilir.
+  "roster.append": 72 * HOUR,
+  "roster.need": 10 * MINUTE,
   "agent.lockdown": 72 * HOUR,
   "approval.decision": 10 * MINUTE,
   "history.query": 10 * MINUTE,
@@ -124,8 +130,18 @@ export const MAX_LIFETIME_MS: Record<MessageType, number> = {
 
 // ---- Başlık -----------------------------------------------------------------------------------
 
+/** Gönderenin bildiği cihaz listesi başı (ADR-0014). */
+export const RosterHeadSchema = z.strictObject({
+  seq: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+  hash: B64_32,
+});
+
 export const HeaderSchema = z.strictObject({
   proto: z.literal(PROTOCOL_VERSION),
+  /** Çalışma alanı (ADR-0013). İmzalıdır; başka alana ait mesaj reddedilir. */
+  ws: WorkspaceId,
+  /** Gönderenin bildiği cihaz listesi başı. Alıcının listesi eskiyse mesaj işlenmez. */
+  rh: RosterHeadSchema,
   type: z.enum(MESSAGE_TYPES as unknown as [MessageType, ...MessageType[]]),
   msgId: Uuid,
   from: DeviceId,
@@ -189,9 +205,12 @@ export const BodySchemas = {
   "file.request": z.strictObject({
     fileRef: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
   }),
-  "device.revoke": z.strictObject({
-    deviceId: DeviceId,
-    reason: SafeText(500).optional(),
+  "roster.append": z.strictObject({
+    /** İmzalı cihaz listesi girişleri; doğrulaması roster.ts'dedir (imzalar girişlerin kendisindedir). */
+    entries: z.array(JsonObjectSchema).min(1).max(100),
+  }),
+  "roster.need": z.strictObject({
+    fromSeq: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
   }),
   "grant.request": z.strictObject({
     path: SafeText(1024, 3),

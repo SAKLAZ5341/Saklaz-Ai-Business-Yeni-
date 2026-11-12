@@ -2,7 +2,7 @@
  * İşleme bağlı onaylar — proje sahibinin ek güvenlik isteği (2026-11-12) ve SECURITY.md §7.
  *
  * Bir onay "genel bir evet" değildir. Telefonun imzaladığı özet (digest) şunların TAMAMINI kapsar:
- *   ajan, telefon, onay kimliği, görev, adım, araç, risk, özet metni, hedefler (dosya/program/alıcı),
+ *   çalışma alanı, ajan, telefon, onay kimliği, görev, adım, araç, risk, özet metni, hedefler (dosya/program/alıcı),
  *   parametrelerin tamamı, ajanın rastgele challenge değeri, verilme zamanı ve süresi.
  *
  * Sonuç:
@@ -19,6 +19,8 @@ import { ProtocolError } from "./errors.js";
 import { ApprovalActionSchema, type ApprovalAction, type Body } from "./schemas.js";
 
 export interface ApprovalContext {
+  /** Çalışma alanı (ADR-0013): başka alandaki bir onay bu alanda geçersizdir. */
+  workspaceId: string;
   agentId: string;
   phoneId: string;
   approvalId: string;
@@ -37,6 +39,7 @@ export function computeApprovalDigest(c: ApprovalContext): Uint8Array {
     "SAKLAZ-v1/approval-digest",
     canonicalBytes({
       v: 1,
+      ws: c.workspaceId,
       agentId: c.agentId,
       phoneId: c.phoneId,
       approvalId: c.approvalId,
@@ -53,6 +56,7 @@ export function computeApprovalDigest(c: ApprovalContext): Uint8Array {
 
 /** Telefonun onay anahtarıyla imzalanan bayt dizisi. */
 export function approvalSigningBytes(i: {
+  workspaceId: string;
   agentId: string;
   phoneId: string;
   approvalId: string;
@@ -62,6 +66,7 @@ export function approvalSigningBytes(i: {
 }): Uint8Array {
   return canonicalBytes({
     v: 1,
+    ws: i.workspaceId,
     agentId: i.agentId,
     phoneId: i.phoneId,
     approvalId: i.approvalId,
@@ -74,6 +79,7 @@ export function approvalSigningBytes(i: {
 // ---- Ajan tarafı ------------------------------------------------------------------------------
 
 export interface PendingApproval {
+  workspaceId: string;
   approvalId: string;
   agentId: string;
   phoneId: string;
@@ -109,6 +115,7 @@ export const DEFAULT_APPROVAL_TTL_SEC = 600;
 export class ApprovalLedger {
   constructor(
     private readonly store: ApprovalStore,
+    private readonly workspaceId: string,
     private readonly agentId: string,
   ) {}
 
@@ -126,6 +133,7 @@ export class ApprovalLedger {
     const expiresInSec = i.expiresInSec ?? DEFAULT_APPROVAL_TTL_SEC;
     const challenge = toB64(randomBytes(32));
     const ctx: ApprovalContext = {
+      workspaceId: this.workspaceId,
       agentId: this.agentId,
       phoneId: i.phoneId,
       approvalId: i.approvalId,
@@ -176,6 +184,7 @@ export class ApprovalLedger {
     const ok = verify(
       "SAKLAZ-v1/approval",
       approvalSigningBytes({
+        workspaceId: rec.workspaceId,
         agentId: rec.agentId,
         phoneId: rec.phoneId,
         approvalId: rec.approvalId,
@@ -202,6 +211,7 @@ export class ApprovalLedger {
     if (!rec) throw new ProtocolError("APPROVAL_UNKNOWN");
     if (rec.state !== "approved") throw new ProtocolError("APPROVAL_NOT_GRANTED");
     const recomputed = computeApprovalDigest({
+      workspaceId: rec.workspaceId,
       agentId: rec.agentId,
       phoneId: rec.phoneId,
       approvalId: rec.approvalId,
@@ -222,23 +232,30 @@ export class ApprovalLedger {
  * Telefon, onay ekranını göstermeden ÖNCE özeti kendisi yeniden hesaplar. Ajanın gönderdiği özet
  * gösterilen içerikle uyuşmuyorsa onay ekranı hiç gösterilmez.
  */
-export function verifyApprovalRequestDigest(agentId: string, phoneId: string, req: Body<"approval.request">): void {
-  const d = computeApprovalDigest({ agentId, phoneId, ...req });
+export function verifyApprovalRequestDigest(
+  workspaceId: string,
+  agentId: string,
+  phoneId: string,
+  req: Body<"approval.request">,
+): void {
+  const d = computeApprovalDigest({ workspaceId, agentId, phoneId, ...req });
   if (!equalConstantTime(d, fromB64(req.digest))) throw new ProtocolError("APPROVAL_MISMATCH");
 }
 
 /** Telefon kararı imzalar (Android'de bu imza biyometrik doğrulamaya bağlı onay anahtarıyla atılır). */
 export function signApprovalDecision(i: {
+  workspaceId: string;
   agentId: string;
   phoneId: string;
   request: Body<"approval.request">;
   decision: "approve" | "reject";
   approvalSecretKey: Uint8Array;
 }): Body<"approval.decision"> {
-  verifyApprovalRequestDigest(i.agentId, i.phoneId, i.request);
+  verifyApprovalRequestDigest(i.workspaceId, i.agentId, i.phoneId, i.request);
   const sig = sign(
     "SAKLAZ-v1/approval",
     approvalSigningBytes({
+      workspaceId: i.workspaceId,
       agentId: i.agentId,
       phoneId: i.phoneId,
       approvalId: i.request.approvalId,

@@ -10,6 +10,7 @@ import {
   verify,
 } from "@saklaz/crypto";
 import {
+  RosterLog,
   approvalSigningBytes,
   canonicalize,
   computeApprovalDigest,
@@ -19,6 +20,7 @@ import {
 import { generateVectors, VECTORS_PATH } from "../scripts/generate-vectors.js";
 
 interface Vectors {
+  roster: { entries: unknown[]; hashes: string[] };
   jcs: { input: unknown; canonical: string }[];
   signatures: { domain: "SAKLAZ-v1/msg"; publicKeyHex: string; messageHex: string; signatureHex: string }[];
   sealed: Record<string, string>;
@@ -78,6 +80,7 @@ describe("çapraz platform test vektörleri", () => {
     const a = committed.approval;
     expect(Buffer.from(computeApprovalDigest(a.context)).toString("base64url")).toBe(a.digest);
     const bytes = approvalSigningBytes({
+      workspaceId: a.context.workspaceId,
       agentId: a.context.agentId,
       phoneId: a.context.phoneId,
       approvalId: a.context.approvalId,
@@ -87,5 +90,13 @@ describe("çapraz platform test vektörleri", () => {
     });
     expect(toHex(bytes)).toBe(a.signingBytesHex);
     expect(verify("SAKLAZ-v1/approval", bytes, fromB64(a.approvalSig), fromHex(a.approvalSignerPublicHex))).toBe(true);
+  });
+
+  it("cihaz listesi vektörü: zincir doğrulanır, özetler birebir aynı", () => {
+    const log = RosterLog.fromEntries(committed.roster.entries);
+    expect(log.head().seq).toBe(2);
+    committed.roster.hashes.forEach((h, i) => {
+      expect(log.hashAt(i)).toBe(h);
+    });
   });
 });

@@ -46,6 +46,10 @@ export function uuidv7(nowMs: number = Date.now()): string {
 
 export interface HeaderInput<T extends MessageType> {
   type: T;
+  /** Çalışma alanı kimliği. */
+  ws: string;
+  /** Gönderenin bildiği cihaz listesi başı. */
+  rh: { seq: number; hash: string };
   from: string;
   to: string;
   ctr: number;
@@ -61,6 +65,8 @@ export function buildHeader<T extends MessageType>(i: HeaderInput<T>): Header & 
   const lifetime = i.lifetimeMs ?? 5 * 60_000;
   return {
     proto: PROTOCOL_VERSION,
+    ws: i.ws,
+    rh: { seq: i.rh.seq, hash: i.rh.hash },
     type: i.type,
     msgId: i.msgId ?? uuidv7(ts),
     from: i.from,

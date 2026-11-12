@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import fc from "fast-check";
 import { generateSigningKeyPair } from "@saklaz/crypto";
 import {
+  IncomingVerifier,
   checkTiming,
   MemoryReplayStore,
   ProtocolError,
@@ -9,7 +10,7 @@ import {
   ReplayGuard,
   CLOCK_SKEW_MS,
 } from "../src/index.js";
-import { bytesOf, makePhone, makeVerifier, NOW, send, setup, TASK, fakeB64 } from "./helpers.js";
+import { bytesOf, makePhone, makeVerifier, makeWorld, NOW, send, setup, TASK, fakeB64 } from "./helpers.js";
 
 beforeAll(setup);
 
@@ -95,15 +96,20 @@ describe("gelen mesaj doğrulama hattı", () => {
   it("rol yetkileri: viewer komut veremez; operator varsayılan olarak onay veremez", () => {
     const viewer = makePhone("dev_viewerFFFFFFFFFFFFFFF", "viewer");
     const op = makePhone("dev_operatorGGGGGGGGGGGGG", "operator");
-    const v = makeVerifier([viewer, op]);
-    expect(code(() => v.verify(bytesOf(send(viewer, "cmd.create", { taskId: TASK, text: "x" })), NOW))).toBe("ROLE_FORBIDDEN");
-    expect(code(() => v.verify(bytesOf(send(viewer, "history.query", { sinceSeq: 0, limit: 10 })), NOW))).toBe("NO_ERROR");
+    const w = makeWorld([viewer, op]);
+    const to = (p: typeof viewer, m: Parameters<typeof send>[1], body: never) => bytesOf(send(p, m, body, { roster: w.roster }));
+    expect(code(() => w.verifier.verify(to(viewer, "cmd.create", { taskId: TASK, text: "x" } as never), NOW))).toBe("ROLE_FORBIDDEN");
+    expect(code(() => w.verifier.verify(to(viewer, "history.query", { sinceSeq: 0, limit: 10 } as never), NOW))).toBe("NO_ERROR");
     const decision = { approvalId: TASK, decision: "approve" as const, digest: fakeB64(32), challenge: fakeB64(32), approvalSig: fakeB64(64) };
-    expect(code(() => v.verify(bytesOf(send(op, "approval.decision", decision)), NOW))).toBe("ROLE_FORBIDDEN");
-    const permissive = makeVerifier([op], { operatorMayApprove: true });
-    expect(code(() => permissive.verify(bytesOf(send(op, "approval.decision", decision)), NOW))).toBe("NO_ERROR");
-    expect(code(() => v.verify(bytesOf(send(op, "device.revoke", { deviceId: viewer.id })), NOW))).toBe("ROLE_FORBIDDEN");
-    expect(code(() => v.verify(bytesOf(send(op, "agent.lockdown", { reason: "telefon kayboldu" })), NOW))).toBe("NO_ERROR");
+    expect(code(() => w.verifier.verify(to(op, "approval.decision", decision as never), NOW))).toBe("ROLE_FORBIDDEN");
+    expect(code(() => w.verifier.verify(to(op, "grant.request", { path: "C:\\Veri", access: "read", recursive: false } as never), NOW))).toBe(
+      "ROLE_FORBIDDEN",
+    );
+    expect(code(() => w.verifier.verify(to(op, "agent.lockdown", { reason: "telefon kayboldu" } as never), NOW))).toBe("NO_ERROR");
+
+    // Politika ile operator'a onay yetkisi verilebilir
+    const pw = makeWorld([op], { policy: { operatorMayApprove: true } });
+    expect(code(() => pw.verifier.verify(bytesOf(send(op, "approval.decision", decision, { roster: pw.roster })), NOW))).toBe("NO_ERROR");
   });
 
   it("yetkisiz mesaj sayaç durumunu ilerletmez", () => {
@@ -116,9 +122,11 @@ describe("gelen mesaj doğrulama hattı", () => {
 
   it("çevrimdışı bilgisayar için kuyruğa alınmış komut, imzalı ömrü içinde kabul edilir, sonra reddedilir", () => {
     const p = makePhone();
-    const m = send(p, "cmd.create", { taskId: TASK, text: "x" }, { lifetimeMs: 24 * 3_600_000 });
-    expect(makeVerifier([p]).verify(bytesOf(m), NOW + 23 * 3_600_000).verdict).toBe("fresh");
-    expect(code(() => makeVerifier([p]).verify(bytesOf(m), NOW + 25 * 3_600_000))).toBe("MESSAGE_EXPIRED");
+    const w = makeWorld([p]);
+    const fresh = () => new IncomingVerifier(w.ws, w.agent.id, w.roster, new MemoryReplayStore());
+    const m = send(p, "cmd.create", { taskId: TASK, text: "x" }, { lifetimeMs: 24 * 3_600_000, roster: w.roster });
+    expect(fresh().verify(bytesOf(m), NOW + 23 * 3_600_000).verdict).toBe("fresh");
+    expect(code(() => fresh().verify(bytesOf(m), NOW + 25 * 3_600_000))).toBe("MESSAGE_EXPIRED");
   });
 
   it("özellik: rastgele bayt dizileri hiçbir zaman doğrulamayı geçemez", () => {
@@ -139,13 +147,17 @@ describe("gelen mesaj doğrulama hattı", () => {
 
   it("özellik: geçerli bir mesajın JSON'unda yapılan rastgele tek karakter değişikliği asla kabul edilmez (yalnızca aynı mesajın tekrarı 'duplicate' olabilir)", () => {
     const p = makePhone();
-    const original = JSON.stringify(send(p, "cmd.create", { taskId: TASK, text: "Raporları özetle" }));
+    const w = makeWorld([p]);
+    const original = JSON.stringify(send(p, "cmd.create", { taskId: TASK, text: "Raporları özetle" }, { roster: w.roster }));
     fc.assert(
       fc.property(fc.nat({ max: original.length - 1 }), fc.integer({ min: 32, max: 126 }), (pos, ch) => {
         const mutated = original.slice(0, pos) + String.fromCharCode(ch) + original.slice(pos + 1);
         if (mutated === original) return true;
         try {
-          const r = makeVerifier([p]).verify(new TextEncoder().encode(mutated), NOW);
+          const r = new IncomingVerifier(w.ws, w.agent.id, w.roster, new MemoryReplayStore()).verify(
+            new TextEncoder().encode(mutated),
+            NOW,
+          );
           // JSON'da anlamı değiştirmeyen tek değişiklik: aynı içerik (ör. boşluk); imza aynı içeriği kapsar.
           return JSON.stringify(r.msg) === JSON.stringify(JSON.parse(original));
         } catch (e) {

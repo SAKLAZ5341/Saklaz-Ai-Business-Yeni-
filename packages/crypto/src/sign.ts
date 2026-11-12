@@ -19,6 +19,9 @@ export const SIGNATURE_DOMAINS = [
   "SAKLAZ-v1/pair",
   "SAKLAZ-v1/audit",
   "SAKLAZ-v1/key-rotate",
+  // v0.3 (ADR-0014, ADR-0015): imzalı cihaz listesi ve kurtarma
+  "SAKLAZ-v1/roster",
+  "SAKLAZ-v1/recovery",
 ] as const;
 export type SignatureDomain = (typeof SIGNATURE_DOMAINS)[number];
 
