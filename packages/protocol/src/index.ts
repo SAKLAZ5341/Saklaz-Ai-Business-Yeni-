@@ -27,6 +27,7 @@ export {
   ApprovalLedger,
   MemoryApprovalStore,
   computeApprovalDigest,
+  approvalDigestInput,
   approvalSigningBytes,
   verifyApprovalRequestDigest,
   signApprovalDecision,

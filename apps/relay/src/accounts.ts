@@ -10,7 +10,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID }
 import { hash as argonHash, verify as argonVerify } from "@node-rs/argon2";
 import { SignJWT, jwtVerify, type CryptoKey, type KeyObject } from "jose";
 import { auditMeta, type Pool } from "./db.js";
-import { generateTotpSecret, otpauthUri, verifyTotp } from "./totp.js";
+import { generateTotpSecret, matchTotpStep, otpauthUri } from "./totp.js";
 
 export class AuthError extends Error {
   constructor(readonly code: "INVALID_CREDENTIALS" | "LOCKED" | "MFA_REQUIRED" | "MFA_INVALID" | "TOKEN_INVALID" | "TOKEN_REUSED" | "EMAIL_TAKEN" | "WEAK_PASSWORD") {
@@ -45,6 +45,16 @@ function decryptSecret(key: Uint8Array, blob: Buffer): Uint8Array {
   const d = createDecipheriv("aes-256-gcm", key, blob.subarray(0, 12));
   d.setAuthTag(blob.subarray(12, 28));
   return Buffer.concat([d.update(blob.subarray(28)), d.final()]);
+}
+
+/** Açılış denetimi için: verilen anahtar bu şifreli TOTP sırrını çözebiliyor mu? (AES-GCM etiketi doğrulanır.) */
+export function canDecryptSecret(key: Uint8Array, blob: Buffer): boolean {
+  try {
+    decryptSecret(key, blob);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export class Accounts {
@@ -90,18 +100,51 @@ export class Accounts {
     }
     if (a.locked_until && a.locked_until.getTime() > this.now()) throw new AuthError("LOCKED");
     const pwOk = await argonVerify(a.password_hash, password);
-    const mfaOk = pwOk && verifyTotp(decryptSecret(this.cfg.mfaKey, a.totp_secret_enc), code, this.now());
-    if (!pwOk || !mfaOk) {
-      const failures = a.failed_logins + 1;
-      const lock = failures >= (this.cfg.maxFailures ?? 10) ? new Date(this.now() + (this.cfg.lockMinutes ?? 15) * 60_000) : null;
-      await this.pool.query("UPDATE accounts SET failed_logins = $2, locked_until = $3 WHERE id = $1", [a.id, lock ? 0 : failures, lock]);
-      await auditMeta(this.pool, { accountId: a.id, actor: "account", action: lock ? "login.locked" : "login.failed", details: { mfa: pwOk } });
-      throw new AuthError(pwOk ? "MFA_INVALID" : "INVALID_CREDENTIALS");
+    const step = pwOk ? matchTotpStep(decryptSecret(this.cfg.mfaKey, a.totp_secret_enc), code, this.now()) : undefined;
+
+    // TOTP tekrar kullanım koruması (Sprint 3 A1): kodun adımı, bu hesapta daha önce tüketilmiş
+    // adımdan BÜYÜKSE kabul edilir. Karşılaştırma ve tüketme tek bir koşullu UPDATE'tir; PostgreSQL
+    // satır kilidi sayesinde aynı kodla gelen eşzamanlı isteklerden en fazla biri başarılı olur.
+    // Değer veritabanında olduğu için koruma yeniden başlatmadan sonra da sürer.
+    let replay = false;
+    if (step !== undefined) {
+      const consumed = await this.pool.query(
+        `UPDATE accounts SET totp_last_step = $2, failed_logins = 0, locked_until = NULL, mfa_enabled = true
+          WHERE id = $1 AND (totp_last_step IS NULL OR totp_last_step < $2)`,
+        [a.id, step.toString()],
+      );
+      if (consumed.rowCount === 1) {
+        await auditMeta(this.pool, { accountId: a.id, actor: "account", action: "login.ok", details: {} });
+        const family = randomUUID();
+        return { accountId: a.id, accessToken: await this.issueAccess(a.id), refreshToken: await this.issueRefresh(a.id, family) };
+      }
+      replay = true;
     }
-    await this.pool.query("UPDATE accounts SET failed_logins = 0, locked_until = NULL, mfa_enabled = true WHERE id = $1", [a.id]);
-    await auditMeta(this.pool, { accountId: a.id, actor: "account", action: "login.ok", details: {} });
-    const family = randomUUID();
-    return { accountId: a.id, accessToken: await this.issueAccess(a.id), refreshToken: await this.issueRefresh(a.id, family) };
+
+    // Başarısız deneme (yanlış parola, yanlış kod veya tekrar kullanılan kod). Sayaç atomik artırılır;
+    // eşzamanlı başarısız denemeler kaybolmaz. Eşik aşılırsa hesap kilitlenir ve sayaç sıfırlanır.
+    const max = this.cfg.maxFailures ?? 10;
+    const lockUntil = new Date(this.now() + (this.cfg.lockMinutes ?? 15) * 60_000);
+    const f = await this.pool.query<{ locked: boolean }>(
+      `UPDATE accounts
+          SET failed_logins = CASE WHEN failed_logins + 1 >= $2 THEN 0 ELSE failed_logins + 1 END,
+              locked_until  = CASE WHEN failed_logins + 1 >= $2 THEN $3 ELSE locked_until END
+        WHERE id = $1
+        RETURNING (failed_logins = 0 AND locked_until = $3) AS locked`,
+      [a.id, max, lockUntil],
+    );
+    const locked = f.rows[0]?.locked === true;
+    const action = locked ? "login.locked" : replay ? "login.totp_replay" : "login.failed";
+    await auditMeta(this.pool, { accountId: a.id, actor: "account", action, details: { mfa: pwOk, replay } });
+    // İstemciye tekrar kullanım ile yanlış kod arasında fark gösterilmez (sunucu tarafında MFA_INVALID → INVALID_CREDENTIALS).
+    throw new AuthError(pwOk ? "MFA_INVALID" : "INVALID_CREDENTIALS");
+  }
+
+  /** Testler ve yönetim için: hesabın tüketilmiş en yüksek TOTP adımı. */
+  async totpLastStep(accountId: string): Promise<bigint | undefined> {
+    const r = await this.pool.query<{ s: string | null }>("SELECT totp_last_step::text AS s FROM accounts WHERE id = $1", [accountId]);
+    const s = r.rows[0]?.s;
+    return s == null ? undefined : BigInt(s);
   }
 
   private async issueAccess(accountId: string): Promise<string> {

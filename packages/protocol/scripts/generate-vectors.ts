@@ -28,6 +28,7 @@ import {
   utf8,
 } from "@saklaz/crypto";
 import {
+  approvalDigestInput,
   approvalSigningBytes,
   canonicalize,
   computeApprovalDigest,
@@ -233,6 +234,7 @@ export async function generateVectors(): Promise<unknown> {
   });
   const approval = {
     context: approvalCtx,
+    digestInputHex: toHex(approvalDigestInput(approvalCtx)),
     digest,
     approvalSignerSeedHex: toHex(seed(0x02)),
     approvalSignerPublicHex: toHex(phoneApproval.publicKey),

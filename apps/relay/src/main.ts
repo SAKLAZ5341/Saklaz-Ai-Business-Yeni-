@@ -1,58 +1,66 @@
 /**
- * Relay giriş noktası (konteyner içinde çalışır). Gizli bilgiler ortam değişkeninden DEĞİL,
- * dosyadan okunur (Docker secrets: /run/secrets/...). FAZ1-PLAN §9.3.
+ * Relay süreç giriş noktası (konteyner içinde çalışır). Sprint 3 A2.
  *
- * Gerekli dosyalar:
- *   SAKLAZ_JWT_PRIVATE_KEY_FILE  — Ed25519 özel anahtar (PKCS#8 PEM)
- *   SAKLAZ_JWT_PUBLIC_KEY_FILE   — Ed25519 açık anahtar (SPKI PEM)
- *   SAKLAZ_MFA_KEY_FILE          — 32 bayt, hex (MFA sırlarının şifreleme anahtarı)
- *   SAKLAZ_DATABASE_URL_FILE     — PostgreSQL bağlantı adresi
+ *   node dist/main.mjs            relay'i başlatır (serve)
+ *   node dist/main.mjs migrate    yalnızca şemayı uygular ve çıkar (kontrollü yükseltme)
+ *
+ * Bu dosya yalnızca süreç düzeyindeki işleri yapar: komut seçimi, sinyaller ve çıkış kodları.
+ * Açılış mantığı run.ts'tedir. Çıkış kodları: 0 başarılı, 1 açılış veya çalışma hatası,
+ * 2 bilinmeyen komut.
  */
-import { readFileSync } from "node:fs";
-import { importPKCS8, importSPKI } from "jose";
-import { initCrypto } from "@saklaz/crypto";
-import { Accounts } from "./accounts.js";
-import { createPool, migrate } from "./db.js";
-import type { PushNotifier } from "./hub.js";
-import { buildRelay } from "./server.js";
+import { createLogger, describeError, runMigrate, runServer } from "./run.js";
 
-function secret(name: string): string {
-  const path = process.env[name];
-  if (!path) throw new Error(`${name} tanımlı değil`);
-  return readFileSync(path, "utf8").trim();
+const log = createLogger();
+
+// Yakalanmamış bir hata, sürecin bilinmeyen bir durumda çalışmaya devam etmesi yerine çıkışla
+// sonuçlanır; konteyner yeniden başlatma politikası süreci temiz durumdan yeniden başlatır.
+process.on("unhandledRejection", (e) => {
+  log("fatal", "yakalanmamış hata", describeError(e));
+  process.exit(1);
+});
+process.on("uncaughtException", (e) => {
+  log("fatal", "yakalanmamış istisna", describeError(e));
+  process.exit(1);
+});
+
+function fail(e: unknown): never {
+  log("fatal", "açılış başarısız", describeError(e));
+  process.exit(1);
 }
 
-/** FCM entegrasyonu Sprint 4'te. Şimdilik yalnızca sayaç tutar; hiçbir içerik göndermez. */
-class NoopPush implements PushNotifier {
-  wake(): Promise<void> {
-    return Promise.resolve();
-  }
+const cmd = process.argv[2] ?? "serve";
+if (cmd === "migrate") {
+  runMigrate(process.env, log).then(() => process.exit(0), fail);
+} else if (cmd === "serve") {
+  runServer(process.env, log).then((relay) => {
+    let stopping = false;
+    const shutdown = (signal: string) => {
+      if (stopping) return;
+      stopping = true;
+      log("info", "kapanıyor", { signal });
+      setTimeout(() => {
+        log("error", "düzgün kapanma zaman aşımına uğradı");
+        process.exit(1);
+      }, 10_000).unref();
+      relay.stop().then(
+        () => {
+          log("info", "kapandı");
+          process.exit(0);
+        },
+        (e: unknown) => {
+          log("error", "kapanırken hata", describeError(e));
+          process.exit(1);
+        },
+      );
+    };
+    process.on("SIGTERM", () => {
+      shutdown("SIGTERM");
+    });
+    process.on("SIGINT", () => {
+      shutdown("SIGINT");
+    });
+  }, fail);
+} else {
+  log("fatal", "bilinmeyen komut", { command: cmd });
+  process.exit(2);
 }
-
-async function main(): Promise<void> {
-  await initCrypto();
-  const pool = createPool(secret("SAKLAZ_DATABASE_URL_FILE"));
-  await migrate(pool);
-  const mfaKey = Buffer.from(secret("SAKLAZ_MFA_KEY_FILE"), "hex");
-  if (mfaKey.length !== 32) throw new Error("MFA anahtarı 32 bayt olmalı");
-  const accounts = new Accounts(pool, {
-    jwtPrivateKey: await importPKCS8(secret("SAKLAZ_JWT_PRIVATE_KEY_FILE"), "EdDSA"),
-    jwtPublicKey: await importSPKI(secret("SAKLAZ_JWT_PUBLIC_KEY_FILE"), "EdDSA"),
-    mfaKey,
-    issuer: process.env["SAKLAZ_RELAY_ID"] ?? "saklaz-relay",
-  });
-  const { app, hub } = buildRelay({ pool, accounts, relayId: process.env["SAKLAZ_RELAY_ID"] ?? "saklaz-relay", push: new NoopPush() });
-  const sweep = setInterval(() => {
-    void hub.sweepExpired();
-  }, 60_000);
-  const shutdown = () => {
-    clearInterval(sweep);
-    void app.close().then(() => pool.end());
-  };
-  process.on("SIGTERM", shutdown);
-  process.on("SIGINT", shutdown);
-  // Yalnızca konteyner ağında dinler; dışarıya ters vekil (Caddy) açılır.
-  await app.listen({ host: process.env["SAKLAZ_LISTEN_HOST"] ?? "0.0.0.0", port: Number(process.env["SAKLAZ_PORT"] ?? "8080") });
-}
-
-void main();

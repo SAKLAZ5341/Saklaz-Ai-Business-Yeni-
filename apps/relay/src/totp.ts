@@ -40,16 +40,35 @@ export function totp(secret: Uint8Array, nowMs: number, digits = 6): string {
   return hotp(secret, BigInt(Math.floor(nowMs / 1000 / 30)), digits);
 }
 
-/** ±1 zaman adımı toleransla doğrular (saat kayması). Karşılaştırma sabit zamanlıdır. */
-export function verifyTotp(secret: Uint8Array, code: string, nowMs: number): boolean {
-  if (!/^\d{6}$/.test(code)) return false;
-  const step = BigInt(Math.floor(nowMs / 1000 / 30));
-  let ok = false;
+export function totpStep(nowMs: number): bigint {
+  return BigInt(Math.floor(nowMs / 1000 / 30));
+}
+
+/**
+ * Kodun eşleştiği zaman adımını döndürür (±1 adım tolerans, saat kayması için); eşleşme yoksa undefined.
+ *
+ * Üç adımın hepsi her zaman denenir ve karşılaştırma sabit zamanlıdır. Birden fazla adım eşleşirse
+ * (6 hanede ≈ 10⁻⁶ olasılık) EN YÜKSEK adım döndürülür: tekrar kullanım koruması bu adımı
+ * "tüketilmiş" sayacağı için bu seçim korumayı yalnızca sıkılaştırır.
+ *
+ * Bu fonksiyon kodun TEKRAR kullanılmadığını denetlemez. Bu denetim, döndürülen adımın kalıcı
+ * depoda atomik olarak tüketilmesiyle yapılır (Accounts.login, Sprint 3 A1).
+ */
+export function matchTotpStep(secret: Uint8Array, code: string, nowMs: number): bigint | undefined {
+  if (!/^\d{6}$/.test(code)) return undefined;
+  const step = totpStep(nowMs);
+  const given = Buffer.from(code);
+  let matched: bigint | undefined;
   for (const d of [-1n, 0n, 1n]) {
     const expected = Buffer.from(hotp(secret, step + d));
-    if (timingSafeEqual(expected, Buffer.from(code))) ok = true;
+    if (timingSafeEqual(expected, given)) matched = step + d;
   }
-  return ok;
+  return matched;
+}
+
+/** ±1 zaman adımı toleransla doğrular. Tekrar kullanımı denetlemez; giriş akışı matchTotpStep kullanır. */
+export function verifyTotp(secret: Uint8Array, code: string, nowMs: number): boolean {
+  return matchTotpStep(secret, code, nowMs) !== undefined;
 }
 
 export function otpauthUri(secret: Uint8Array, account: string, issuer = "SAKLAZ AI"): string {
