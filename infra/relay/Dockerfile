@@ -26,6 +26,7 @@ COPY apps/relay/package.json apps/relay/
 COPY apps/agent/package.json apps/agent/
 COPY packages/testkit/package.json packages/testkit/
 COPY packages/win-keyprotect/package.json packages/win-keyprotect/
+COPY packages/client-core/package.json packages/client-core/
 # Kurulum betikleri çalıştırılmaz (--ignore-scripts): relay'in yerel modülü (@node-rs/argon2) önceden
 # derlenmiş paket olarak gelir; derleme betiği gerektiren paketler (ajanın SQLCipher modülü) relay
 # imajında kullanılmaz.

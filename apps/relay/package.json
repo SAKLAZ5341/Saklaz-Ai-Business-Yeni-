@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@saklaz/agent": "workspace:*",
+    "@saklaz/client-core": "workspace:*",
     "@saklaz/testkit": "workspace:*",
     "@types/pg": "8.23.1",
     "@types/ws": "8.18.2",
