@@ -13,6 +13,12 @@
  *   24  32  bindingHash  BLAKE2b("SAKLAZ-v1/kek-binding", SID ‖ MachineGuid) — gizli değil
  *   56  4   wrappedLen   1..4096
  *   60  N   wrapped      koruyucunun blob'u
+ *   60+N 32 mac          HMAC-SHA256(HKDF(KEK, "SAKLAZ-v1/kek-file-mac"), dosyanın önceki bütün baytları)
+ *
+ * Bütünlük etiketi (mac) neden gerekli: DPAPI blob'unun bazı başlık alanları (ör. sağlayıcı GUID'i)
+ * DPAPI'nin kendi bütünlük denetiminin DIŞINDADIR; değiştirildiklerinde blob yine çözülür (Windows
+ * CI'da bulundu). KEK değiştirilemez ama "değiştirilmiş dosya reddedilmeli" kuralı için dosyanın
+ * TAMAMI, ancak KEK'i bilen birinin üretebileceği bir etiketle doğrulanır → KEY_INTEGRITY.
  *
  * Bağlama iki katmanlıdır:
  *   1. bindingHash, açılışta geçerli kullanıcı ve makineyle karşılaştırılır → BINDING_MISMATCH
@@ -26,7 +32,8 @@
  */
 import { closeSync, fsyncSync, linkSync, openSync, readFileSync, unlinkSync, writeSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, win32 } from "node:path";
-import { concat, equalConstantTime, randomBytes, taggedHash, utf8, wipe } from "@saklaz/crypto";
+import { createHmac } from "node:crypto";
+import { concat, equalConstantTime, hkdf, randomBytes, taggedHash, utf8, wipe } from "@saklaz/crypto";
 import { KeyProtectionError, PROTECTOR_IDS, type KeyProtector, type ProtectorBinding } from "./protectors/types.js";
 
 export const KEK_BYTES = 32;
@@ -34,6 +41,17 @@ const MAGIC = utf8("SKK1");
 const VERSION = 1;
 const HEADER_FIXED = 60;
 const MAX_WRAPPED = 4096;
+const MAC_BYTES = 32;
+
+/** Dosya bütünlük etiketi: KEK'ten türetilmiş anahtarla HMAC-SHA256. */
+function fileMac(kek: Uint8Array, body: Uint8Array): Uint8Array {
+  const macKey = hkdf(kek, new Uint8Array(0), "SAKLAZ-v1/kek-file-mac", 32);
+  try {
+    return new Uint8Array(createHmac("sha256", macKey).update(body).digest());
+  } finally {
+    wipe(macKey);
+  }
+}
 
 function u16(n: number): Uint8Array {
   return new Uint8Array([(n >>> 8) & 0xff, n & 0xff]);
@@ -62,14 +80,21 @@ function buildHeader(protector: KeyProtector, keyId: Uint8Array): Uint8Array {
 }
 
 /** Dosyayı yalnızca yapısal olarak ayrıştırır; hiçbir şeyi çözmez. */
-function parse(file: Uint8Array): { header56: Uint8Array; kind: number; wrapped: Uint8Array; bHash: Uint8Array } {
-  if (file.length < HEADER_FIXED + 1 || !equalConstantTime(file.subarray(0, 4), MAGIC)) throw new KeyProtectionError("KEY_FORMAT");
+function parse(file: Uint8Array): { header56: Uint8Array; kind: number; wrapped: Uint8Array; bHash: Uint8Array; body: Uint8Array; mac: Uint8Array } {
+  if (file.length < HEADER_FIXED + 1 + MAC_BYTES || !equalConstantTime(file.subarray(0, 4), MAGIC)) throw new KeyProtectionError("KEY_FORMAT");
   const version = ((file[4] ?? 0) << 8) | (file[5] ?? 0);
   if (version !== VERSION) throw new KeyProtectionError("KEY_VERSION");
   if (file[7] !== 0) throw new KeyProtectionError("KEY_FORMAT");
   const len = new DataView(file.buffer, file.byteOffset + 56, 4).getUint32(0, false);
-  if (len < 1 || len > MAX_WRAPPED || file.length !== HEADER_FIXED + len) throw new KeyProtectionError("KEY_FORMAT");
-  return { header56: file.subarray(0, 56), kind: file[6] ?? 0, wrapped: file.subarray(60, 60 + len), bHash: file.subarray(24, 56) };
+  if (len < 1 || len > MAX_WRAPPED || file.length !== HEADER_FIXED + len + MAC_BYTES) throw new KeyProtectionError("KEY_FORMAT");
+  return {
+    header56: file.subarray(0, 56),
+    kind: file[6] ?? 0,
+    wrapped: file.subarray(60, 60 + len),
+    bHash: file.subarray(24, 56),
+    body: file.subarray(0, 60 + len),
+    mac: file.subarray(60 + len),
+  };
 }
 
 /** Geçici dosyaya yaz, diske zorla, hedef ada bağla (hedef varsa başarısız), geçiciyi sil. */
@@ -119,7 +144,8 @@ export const ProtectedKeyStore = {
     const len = new Uint8Array(4);
     new DataView(len.buffer).setUint32(0, wrapped.length, false);
     try {
-      writeNew(path, concat(header, len, wrapped));
+      const body = concat(header, len, wrapped);
+      writeNew(path, concat(body, fileMac(kek, body)));
     } catch (e) {
       wipe(kek);
       throw e;
@@ -129,7 +155,7 @@ export const ProtectedKeyStore = {
 
   /**
    * Var olan KEK'i çözer. Dosya değiştirilmez veya silinmez (bozuk olsa bile; inceleme için).
-   * Hatalar: KEY_NOT_FOUND, KEY_FORMAT, KEY_VERSION, PROTECTOR_MISMATCH, BINDING_MISMATCH, UNWRAP_FAILED.
+   * Hatalar: KEY_NOT_FOUND, KEY_FORMAT, KEY_VERSION, PROTECTOR_MISMATCH, BINDING_MISMATCH, UNWRAP_FAILED, KEY_INTEGRITY.
    */
   load(path: string, protector: KeyProtector): Uint8Array {
     let file: Uint8Array;
@@ -138,7 +164,7 @@ export const ProtectedKeyStore = {
     } catch (e) {
       throw new KeyProtectionError((e as { code?: string }).code === "ENOENT" ? "KEY_NOT_FOUND" : "KEY_FORMAT");
     }
-    if (file.length > HEADER_FIXED + MAX_WRAPPED) throw new KeyProtectionError("KEY_FORMAT");
+    if (file.length > HEADER_FIXED + MAX_WRAPPED + MAC_BYTES) throw new KeyProtectionError("KEY_FORMAT");
     const p = parse(file);
     if (p.kind !== PROTECTOR_IDS[protector.kind]) throw new KeyProtectionError("PROTECTOR_MISMATCH");
     if (!equalConstantTime(p.bHash, bindingHash(protector.binding()))) throw new KeyProtectionError("BINDING_MISMATCH");
@@ -146,6 +172,10 @@ export const ProtectedKeyStore = {
     if (kek.length !== KEK_BYTES) {
       wipe(kek);
       throw new KeyProtectionError("KEY_FORMAT");
+    }
+    if (!equalConstantTime(fileMac(kek, p.body), p.mac)) {
+      wipe(kek);
+      throw new KeyProtectionError("KEY_INTEGRITY");
     }
     return kek;
   },

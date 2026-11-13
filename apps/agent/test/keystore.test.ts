@@ -8,7 +8,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { initCrypto, toHex } from "@saklaz/crypto";
+import { concat, initCrypto, toHex } from "@saklaz/crypto";
 import type { NativeKeyProtect } from "@saklaz/win-keyprotect";
 import { bindingHash, defaultKeyPath, DpapiUserProtector, KEK_BYTES, KeyProtectionError, ProtectedKeyStore, type KeyProtector } from "../src/index.js";
 import { FakeProtector } from "./fake-protector.js";
@@ -87,7 +87,8 @@ function suite(name: string, make: () => KeyProtector) {
         }
         expect(readFileSync(p).equals(t)).toBe(true); // yükleme dosyaya dokunmadı
       }
-      expect([...codes].every((c) => ["KEY_FORMAT", "KEY_VERSION", "PROTECTOR_MISMATCH", "BINDING_MISMATCH", "UNWRAP_FAILED"].includes(c))).toBe(true);
+      expect([...codes].every((c) => ["KEY_FORMAT", "KEY_VERSION", "PROTECTOR_MISMATCH", "BINDING_MISMATCH", "UNWRAP_FAILED", "KEY_INTEGRITY"].includes(c))).toBe(true);
+      expect(codes.has("KEY_INTEGRITY")).toBe(true); // bütünlük etiketinin baytları
     });
 
     it("kısaltılmış, boş, uzatılmış ve olmayan dosya", () => {
@@ -133,9 +134,28 @@ describe("bağlama ve izolasyon (sahte koruyucu)", () => {
     const bad: KeyProtector = { kind: "test-fake", binding: () => ({ userSid: "S", machineGuid: "g" }), wrap: () => new Uint8Array(5000), unwrap: () => new Uint8Array(0) };
     expectCode(() => ProtectedKeyStore.create(p, bad), "PROTECT_FAILED");
     expect(existsSync(p)).toBe(false);
+    // Koruyucu blob'u "kabul edip" yanlış uzunlukta veri döndürürse (bozuk koruyucu) KEY_FORMAT.
     const short: KeyProtector = { ...bad, wrap: () => new Uint8Array(10), unwrap: () => new Uint8Array(16) };
     ProtectedKeyStore.create(p, short);
     expectCode(() => ProtectedKeyStore.load(p, short), "KEY_FORMAT"); // 32 bayt değil
+  });
+
+  it("koruyucu blob'daki bir değişikliği FARK ETMESE bile (DPAPI'nin denetlemediği başlık alanları) dosya reddedilir: KEY_INTEGRITY", () => {
+    const p = keyPath();
+    // Blob'un ilk 4 baytını yok sayan sahte koruyucu: Windows CI'da gerçek DPAPI'de görülen davranış.
+    const inner = new FakeProtector();
+    const lax: KeyProtector = {
+      kind: "test-fake",
+      binding: () => inner.binding(),
+      wrap: (k, e) => concat(new Uint8Array(4), inner.wrap(k, e)),
+      unwrap: (b, e) => inner.unwrap(b.subarray(4), e),
+    };
+    const kek = ProtectedKeyStore.create(p, lax);
+    expect(toHex(ProtectedKeyStore.load(p, lax))).toBe(toHex(kek));
+    const t = readFileSync(p);
+    t[60] = (t[60] ?? 0) ^ 0xff; // blob'un "denetlenmeyen" alanı
+    writeFileSync(p, t);
+    expectCode(() => ProtectedKeyStore.load(p, lax), "KEY_INTEGRITY");
   });
 
   it("yazım hatası WRITE_FAILED olarak döner (hedef klasör bir dosya)", () => {

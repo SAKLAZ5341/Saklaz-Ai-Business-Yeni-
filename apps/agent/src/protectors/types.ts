@@ -37,6 +37,7 @@ export type KeyProtectionErrorCode =
   | "KEY_VERSION"
   | "PROTECTOR_MISMATCH"
   | "BINDING_MISMATCH"
+  | "KEY_INTEGRITY"
   | "WRITE_FAILED"
   | "INVALID_ARGUMENT";
 
