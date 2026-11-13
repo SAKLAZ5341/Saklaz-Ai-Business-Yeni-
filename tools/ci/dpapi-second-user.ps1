@@ -51,8 +51,10 @@ try {
   # 3. B adına çalıştır (komut satırı uzunluk sınırı için .cmd sarmalayıcı)
   $result = Join-Path $work 'result-b.json'
   $cmd = Join-Path $work 'run-b.cmd'
+  # /tr değerinde gömülü tırnak kullanılmaz (pwsh kaçışlar, schtasks yolu bulamaz); yolda boşluk olmamalı.
+  if ($cmd -match '\s') { throw "Görev yolu boşluk içeriyor: $cmd" }
   Set-Content -Path $cmd -Encoding ascii -Value "`"$node`" `"$probe`" cross `"$(Join-Path $work 'blob.bin')`" `"$result`" > `"$(Join-Path $work 'b.log')`" 2>&1"
-  Invoke-Checked 'görev oluşturma' { schtasks /create /tn $task /ru $user /rp $pw /sc once /st 23:59 /tr "`"$cmd`"" /rl highest /f }
+  Invoke-Checked 'görev oluşturma' { schtasks /create /tn $task /ru $user /rp $pw /sc once /st 23:59 /tr $cmd /rl highest /f }
   Invoke-Checked 'görevi çalıştırma' { schtasks /run /tn $task }
   $deadline = (Get-Date).AddSeconds(180)
   while (-not (Test-Path $result) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
