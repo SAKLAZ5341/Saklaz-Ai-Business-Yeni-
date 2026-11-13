@@ -68,6 +68,39 @@ jobs:
           dart pub get
           dart test
 
+  docker:
+    name: Docker — relay imajı ve Compose (A2)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Temel imajların özetleri (digest) — Dockerfile ve Compose'da sabitlenen değerlerle karşılaştırma
+        run: |
+          for img in $(grep -hoE '(node|postgres|caddy):[^ "}]+' infra/relay/Dockerfile infra/relay/docker-compose.yml | sort -u); do
+            echo "$img → $(docker buildx imagetools inspect "$img" --format '{{json .Manifest.Digest}}')"
+          done
+      - name: İmaj derlemesi
+        run: docker build -t saklaz-relay:test -f infra/relay/Dockerfile .
+      - name: Docker ve Compose entegrasyon testleri
+        env:
+          SAKLAZ_DOCKER_TEST: "1"
+          SAKLAZ_RELAY_IMAGE: saklaz-relay:test
+          SAKLAZ_DOCKER_LOG_DIR: ${{ runner.temp }}/docker-logs
+        run: pnpm --filter @saklaz/relay exec vitest run -c vitest.docker.config.ts --reporter=verbose
+      - name: Konteyner günlükleri (yalnızca hata durumunda; sentetik test verisi)
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: docker-logs
+          path: ${{ runner.temp }}/docker-logs
+          retention-days: 7
+
   windows-inventory:
     name: Windows envanter betiği (Pester, D6)
     runs-on: windows-2022

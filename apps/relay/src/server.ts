@@ -2,7 +2,7 @@
  * Relay HTTP + WSS sunucusu (Fastify). TLS, önündeki ters vekil sunucuda (Caddy) sonlanır;
  * bu süreç yalnızca iç ağda dinler (ARCHITECTURE.md §8, FAZ1-PLAN §9).
  */
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
 import { fromB64, verify } from "@saklaz/crypto";
@@ -19,6 +19,17 @@ export interface RelayOptions {
   now?: () => number;
   /** Kimlik doğrulama uçları için IP başına dakikalık istek sınırı (varsayılan 30). */
   authRatePerMinute?: number;
+  /**
+   * X-Forwarded-For'a güven: sayı = önündeki ters vekil sayısı (Caddy arkasında 1), false = hiç.
+   * Varsayılan true (Sprint 2 davranışı; testler doğrudan bağlanır). Üretim giriş noktası
+   * (main.ts) bunu her zaman açıkça ayarlar; doğrudan açılan bir relay'de istemci IP'si taklit
+   * edilip hız sınırı atlatılamasın diye 0 kullanılır.
+   */
+  trustProxy?: boolean | number;
+  /** Fastify günlük ayarı (varsayılan kapalı). İstek gövdesi ve başlıkları günlüğe yazılmaz. */
+  logger?: false | { level: string };
+  /** Hazır olma denetimi (/readyz). Verilmezse /readyz her zaman 200 döner. */
+  ready?: () => Promise<boolean>;
 }
 
 const Register = z.strictObject({ email: z.email().max(254), password: z.string().min(12).max(256) });
@@ -31,6 +42,24 @@ const DeviceReg = z.strictObject({
   /** Cihazın anahtar sahipliği kanıtı: SAKLAZ-v1/relay-auth alanında {deviceId, signPub, accountId} imzası. */
   proof: B64_64,
 });
+
+/** Sayı verilirse: yalnızca soketten itibaren o kadar sekmeye (ters vekile) güvenilir. */
+function trustProxyOption(t: boolean | number | undefined): boolean | ((addr: string, hop: number) => boolean) {
+  if (t === undefined) return true;
+  if (typeof t === "boolean") return t;
+  const hops = t;
+  return (_addr, hop) => hop < hops;
+}
+
+/** pg ve Node ağ hataları: veritabanı bağlantısı yok veya koptu. */
+export function isDbUnavailable(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const e = err as { code?: unknown; message?: unknown };
+  const code = typeof e.code === "string" ? e.code : "";
+  if (["ECONNREFUSED", "ECONNRESET", "ENOTFOUND", "EAI_AGAIN", "ETIMEDOUT", "EPIPE", "57P01", "57P02", "57P03", "08000", "08001", "08003", "08006"].includes(code)) return true;
+  const m = typeof e.message === "string" ? e.message : "";
+  return /Connection terminated|timeout exceeded when trying to connect|Client has encountered a connection error/i.test(m);
+}
 
 /** IP başına basit sabit pencere sınırlayıcı (kimlik doğrulama uçları için). */
 class IpLimiter {
@@ -54,7 +83,21 @@ class IpLimiter {
 
 export function buildRelay(o: RelayOptions): { app: FastifyInstance; hub: Hub } {
   const now = o.now ?? Date.now;
-  const app = Fastify({ logger: false, bodyLimit: 64 * 1024, trustProxy: true });
+  const app = Fastify({
+    logger: o.logger
+      ? {
+          level: o.logger.level,
+          // Yalnızca yöntem, yol ve durum kodu. Başlıklar (Authorization), gövde (parola, TOTP kodu)
+          // ve sorgu dizgisi günlüğe girmez.
+          serializers: {
+            req: (r: FastifyRequest) => ({ method: r.method, route: r.routeOptions.url ?? "?" }),
+            res: (r: { statusCode: number }) => ({ statusCode: r.statusCode }),
+          },
+        }
+      : false,
+    bodyLimit: 64 * 1024,
+    trustProxy: trustProxyOption(o.trustProxy),
+  });
   const hub = new Hub(o.pool, o.accounts, { relayId: o.relayId, push: o.push, now });
   const authLimiter = new IpLimiter(o.authRatePerMinute ?? 30, 60_000, now);
 
@@ -74,7 +117,25 @@ export function buildRelay(o: RelayOptions): { app: FastifyInstance; hub: Hub } 
     throw e;
   };
 
+  // Canlılık: süreç ayakta ve olay döngüsü çalışıyor. Konteyner sağlık denetimi bunu kullanır.
   app.get("/healthz", () => ({ ok: true }));
+  // Hazır olma: veritabanına ulaşılabiliyor. Veritabanı kopuksa 503; süreç ÇÖKMEZ ve bağlantı
+  // geri gelince kendiliğinden toparlanır.
+  app.get("/readyz", async (_req, reply) => {
+    const ok = o.ready ? await o.ready() : true;
+    return reply.code(ok ? 200 : 503).send({ ok });
+  });
+
+  // Beklenmeyen hatalarda istemciye ayrıntı verilmez (veritabanı hata metni, yığın izi, iç adresler
+  // sızmaz). Veritabanına ulaşılamıyorsa 503, diğer durumlarda 500.
+  app.setErrorHandler((err: Error & { statusCode?: number; code?: string }, req, reply) => {
+    if (typeof err.statusCode === "number" && err.statusCode >= 400 && err.statusCode < 500) {
+      return reply.code(err.statusCode).send({ error: "BAD_REQUEST" });
+    }
+    const unavailable = isDbUnavailable(err);
+    req.log.error({ err: { name: err.name, code: err.code ?? null } }, unavailable ? "veritabanı kullanılamıyor" : "beklenmeyen hata");
+    return reply.code(unavailable ? 503 : 500).send({ error: unavailable ? "UNAVAILABLE" : "INTERNAL" });
+  });
 
   app.post("/v1/accounts", async (req, reply) => {
     if (!authLimiter.hit(req.ip)) return reply.code(429).send({ error: "RATE_LIMITED" });
