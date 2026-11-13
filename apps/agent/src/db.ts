@@ -45,13 +45,20 @@ export function openAgentDb(path: string, vault: SecretVault): AgentDb {
     vault.set(DB_KEY_NAME, key);
   }
   const db = new Database(path);
-  db.pragma("cipher='sqlcipher'");
-  db.pragma(`key="x'${Buffer.from(key).toString("hex")}'"`);
-  db.pragma("journal_mode = WAL");
-  db.pragma("synchronous = FULL");
-  db.pragma("foreign_keys = ON");
-  migrate(db);
-  return db;
+  try {
+    db.pragma("cipher='sqlcipher'");
+    db.pragma(`key="x'${Buffer.from(key).toString("hex")}'"`);
+    db.pragma("journal_mode = WAL");
+    db.pragma("synchronous = FULL");
+    db.pragma("foreign_keys = ON");
+    migrate(db);
+    return db;
+  } catch (e) {
+    // Yanlış anahtar (SQLITE_NOTADB) veya bozuk dosya: tanıtıcı kapatılmadan bırakılırsa Windows'ta
+    // dosya kilitli kalır (Sprint 3 A0, B1). Hata her durumda yeniden fırlatılır.
+    db.close();
+    throw e;
+  }
 }
 
 function migrate(db: AgentDb): void {

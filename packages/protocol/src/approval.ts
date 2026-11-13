@@ -32,26 +32,31 @@ export interface ApprovalContext {
   expiresInSec: number;
 }
 
+/**
+ * Onay özetinin girdisi: işlem bağlamının kanonik JSON baytları.
+ * Ayrı dışa aktarılır, böylece test vektörü bu baytları da içerir ve başka platformdaki
+ * (Dart) uygulama hangi alanda saptığını görebilir (Sprint 3 A0, B2).
+ */
+export function approvalDigestInput(c: ApprovalContext): Uint8Array {
+  const action = ApprovalActionSchema.parse(c.action);
+  return canonicalBytes({
+    v: 1,
+    ws: c.workspaceId,
+    agentId: c.agentId,
+    phoneId: c.phoneId,
+    approvalId: c.approvalId,
+    taskId: c.taskId,
+    stepId: c.stepId,
+    action,
+    challenge: c.challenge,
+    issuedAt: c.issuedAt,
+    expiresInSec: c.expiresInSec,
+  });
+}
+
 /** Onay özeti: tüm işlem bağlamının alan ayrımlı BLAKE2b-256 özeti. */
 export function computeApprovalDigest(c: ApprovalContext): Uint8Array {
-  const action = ApprovalActionSchema.parse(c.action);
-  return taggedHash(
-    "SAKLAZ-v1/approval-digest",
-    canonicalBytes({
-      v: 1,
-      ws: c.workspaceId,
-      agentId: c.agentId,
-      phoneId: c.phoneId,
-      approvalId: c.approvalId,
-      taskId: c.taskId,
-      stepId: c.stepId,
-      action,
-      challenge: c.challenge,
-      issuedAt: c.issuedAt,
-      expiresInSec: c.expiresInSec,
-    }),
-    32,
-  );
+  return taggedHash("SAKLAZ-v1/approval-digest", approvalDigestInput(c), 32);
 }
 
 /** Telefonun onay anahtarıyla imzalanan bayt dizisi. */
