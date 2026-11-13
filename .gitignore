@@ -7,3 +7,6 @@ coverage/
 .env.*
 !.env.example
 saklaz-envanter-*.json
+
+# Yerel modül derleme çıktısı (Sprint 3 A3)
+packages/win-keyprotect/native/build/

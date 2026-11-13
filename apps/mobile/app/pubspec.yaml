@@ -1,0 +1,19 @@
+name: saklaz_ai
+description: SAKLAZ AI Android uygulaması (MVP alfa) — Flutter kabuğu + WebView arayüzü.
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  webview_flutter: 4.10.0
+  flutter_secure_storage: 9.2.2
+  mobile_scanner: 6.0.2
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/web/index.html
