@@ -1,10 +1,10 @@
 # Sprint 3 — Aşama 1 Raporu: TOTP Tekrar Kullanım Koruması
 
 > **Tarih:** 2026-11-13
-> **Durum:** ✅ A1 tamamlandı. PR #7, GitHub CI'daki bütün işlerde yeşil. **Birleştirme ve A2 için proje sahibinin onayı bekleniyor.**
-> **PR:** #7 (`s3/a1-totp-tekrar`, commit `131d711`). Taban dal: `s3/a0-ci-yesil` (PR #6). A0 birleştirildikten sonra PR #7'nin tabanı `main` yapılacak.
+> **Durum:** ✅ A1 tamamlandı ve **`main`'e ulaştı** (PR #7 → A0 dalı → PR #6 → `main` `13afcf1`). Ayrıntı: §8.
+> **PR:** #7 (`s3/a1-totp-tekrar`; A1'in kendi commit'i `131d711`). Taban dal: `s3/a0-ci-yesil` (PR #6). Planlanan "tabanı `main` yapma" adımı uygulanmadı: PR #7 doğrudan A0 dalına birleştirildi (§8).
 > **Yedek noktası:** `s3-a1-oncesi` etiketi (yerel).
-> **Birleştirme:** Yapılmadı. `main` dal koruması (K5) GitHub'da henüz etkin değil (`protected: false`; son kontrol CI bittikten sonra). Koruma ve beş zorunlu kontrol doğrulanmadan hiçbir PR birleştirilmeyecek.
+> **Birleştirme:** Yapıldı (§8). *Rapor yazıldığı andaki durum:* `main` dal koruması henüz etkin değildi. K5 sonradan Ruleset `27197647` ile etkinleştirildi (Sprint 3 planı §9).
 
 ## 1. Sorun
 
@@ -103,8 +103,25 @@ Sprint 1–2 ve A0 testlerinin hiçbiri silinmedi, gevşetilmedi veya değiştir
 
 ## 7. Sonraki adım
 
-A2'ye (Docker) **onayınız olmadan geçilmeyecek.** Bekleyen işler:
+*Rapor yazıldığı andaki bekleyen işler; hepsi sonradan tamamlandı:*
 
-1. GitHub'da `main` dal korumasının (K5) açılması. Ardından ben doğrularım.
-2. PR #6 (A0) ve PR #7 (A1) birleştirme onayı. Sıra: önce #6, sonra #7'nin tabanı `main` yapılır, CI yeniden yeşil olunca #7.
-3. A2 için onay.
+1. ~~GitHub'da `main` dal korumasının (K5) açılması~~ → Ruleset `27197647` etkin.
+2. ~~PR #6 ve PR #7 birleştirme onayı~~ → birleştirildi (§8).
+3. ~~A2 için onay~~ → A2 tamamlandı (SPRINT-3-A2-RAPOR.md).
+
+## 8. Birleştirme kaydı (GitHub API'den doğrulandı, 2026-11-13)
+
+| | Değer |
+|---|---|
+| PR | #7, `s3/a1-totp-tekrar` → `s3/a0-ci-yesil` |
+| Birleştiren | SAKLAZ5341 (proje sahibi), GitHub arayüzünden |
+| Zaman | 2026-11-13 09:32:50 (İstanbul) |
+| Yöntem | Merge commit (ebeveynler: `3175947`, `2fb6748`) |
+| Birleştirme commit'i | `4d79c86` |
+| PR'ın son baş commit'i | `2fb6748`. Bu, A2'nin (PR #8) A1 dalına birleştirilmesiyle oluşmuştu; PR #7 bu yüzden A1 **ve** A2'yi birlikte taşıdı. |
+| Dosya ağacı | `4d79c86` = A2'nin son commit'i `c36043f` (birebir aynı) |
+| `main`'e ulaşma | PR #6 ile, `13afcf1` (2026-11-13 10:56) |
+| PR #7 başında CI (`2fb6748`) | 8/8 yeşil (Docker dahil) |
+
+Bu rapordaki TOTP tekrar kullanım koruması (A1) `main`'de çalışıyor. `main` üzerindeki birleştirme sonrası CI'da relay testleri 57/57 (A1'in 13 testi dahil) ve Docker testleri 13/13 yeşil; Docker testleri TOTP tekrar ve eşzamanlılık senaryolarını konteynerde de doğruluyor.
+

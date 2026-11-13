@@ -1,10 +1,10 @@
 # Sprint 3 — Aşama 2 Raporu: Relay'in Docker Ortamına Taşınması
 
 > **Tarih:** 2026-11-13
-> **Durum:** ✅ A2 tamamlandı. PR #8, GitHub CI'daki **yedi işin tamamında** yeşil (son commit `c36043f`). **Birleştirme ve A3 için proje sahibinin onayı bekleniyor.**
+> **Durum:** ✅ A2 tamamlandı. PR #8, GitHub CI'daki **yedi işin tamamında** yeşil (son commit `c36043f`). A2 **`main`'e ulaştı** (PR #8 → A1 dalı → PR #7 → A0 dalı → PR #6 → `main` `13afcf1`). Ayrıntı: §11. **A3 için proje sahibinin onayı bekleniyor.**
 > **PR:** #8 (`s3/a2-docker`, son commit `c36043f`). Taban: `s3/a1-totp-tekrar` (PR #7).
 > **Bağımlılık zinciri:** A0 (#6) → A1 (#7) → A2 (#8). A2, A1'in migration'ını (002) ve TOTP tekrar korumasını kullanır. Henüz birleştirilmemiş hiçbir kodun `main`'de olduğu varsayılmadı; her PR bir öncekinin üzerine kuruldu ve CI her PR'da kendi tabanıyla birlikte çalıştı.
-> **Birleştirme:** Yapılmadı. `main` dal koruması (K5) hâlâ etkin değil (`protected: false`, rapor yazılırken kontrol edildi).
+> **Birleştirme:** Yapıldı (§11). *Rapor yazıldığı andaki durum:* `main` dal koruması etkin değildi. K5 sonradan Ruleset `27197647` ile etkinleştirildi.
 > **Yedek noktası:** `s3-a2-oncesi` etiketi (yerel).
 
 ## 1. Ortam notu (dürüstlük için)
@@ -210,6 +210,8 @@ Bunlar yapılmadan relay **üretimde kullanıma alınmamalıdır**:
 
 ## 9. K5 için zorunlu kontrol listesi (güncellendi)
 
+> **Güncel durum:** K5, Ruleset `27197647` ile etkin. Ruleset bu altı kontrole ek olarak `CodeQL` kontrolünü ve bir kod tarama kuralını (CodeQL, orta ve üzeri güvenlik uyarısı) da zorunlu kılıyor; ayrıntı Sprint 3 planı §9'da. Aşağıdaki metin, rapor yazıldığı andaki öneridir.
+
 A2 ile **altıncı** bir CI işi eklendi. `main` dal korumasında zorunlu kontrollere bu da eklenmelidir:
 
 1. `TypeScript (lint, sınır, tip, test) — ubuntu + PostgreSQL`
@@ -224,3 +226,21 @@ Not: Bu iş PR #8 birleştirilene kadar `main`'de çalışmaz. Zorunlu kontrol o
 ## 10. Sonraki adım
 
 A3'e (Windows DPAPI kasası) **onayınız olmadan geçilmeyecek.**
+
+## 11. Birleştirme kaydı (GitHub API'den doğrulandı, 2026-11-13)
+
+| | Değer |
+|---|---|
+| PR | #8, `s3/a2-docker` → `s3/a1-totp-tekrar` |
+| Birleştiren | SAKLAZ5341 (proje sahibi), GitHub arayüzünden |
+| Zaman | 2026-11-13 09:12:57 (İstanbul) |
+| Yöntem | Merge commit (ebeveynler: `131d711`, `c36043f`) |
+| Birleştirme commit'i | `2fb6748`; dosya ağacı `c36043f` ile birebir aynı |
+| `main`'e ulaşma | PR #7 (`4d79c86`) → PR #6 (`13afcf1`, 2026-11-13 10:56) |
+
+PR'lar planlandığı gibi tek tek `main`'e değil, zincir halinde bir önceki PR'ın dalına birleştirildi. Her adımda dosya ağacının değişmediği doğrulandı; sonuçta `main`'e ulaşan içerik, CI'da test edilen içerikle aynıdır.
+
+**PR #6'da çıkan CodeQL bulguları** (bu rapordaki Docker test dosyasında): 2 orta seviye uyarı. Biri düzeltildi (`840fcca`); diğeri proje sahibi tarafından gerekçesiyle "False positive" olarak kapatıldı. Kapatma durumu bu oturumdan doğrudan okunamadı (kod tarama API'si 403); yalnızca dolaylı olarak doğrulandı. Ayrıntı: SPRINT-3-A0-RAPOR.md §7.
+
+**`main` üzerinde birleştirme sonrası CI (`13afcf1`):** Bütün işler yeşil. Docker 13/13, relay 57/57.
+
