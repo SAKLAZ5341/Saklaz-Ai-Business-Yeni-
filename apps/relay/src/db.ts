@@ -9,9 +9,27 @@ export function createPool(connectionString: string): Pool {
   return new pg.Pool({ connectionString, max: 10 });
 }
 
+/** Sıralı şema dosyaları. Her dosya idempotenttir ve her açılışta yeniden çalıştırılır. */
+export const MIGRATIONS = ["001_init.sql", "002_totp_replay.sql"] as const;
+
+/**
+ * Şemayı kurar veya günceller. Aynı veritabanına bağlı birden fazla relay süreci aynı anda
+ * başlarsa yarış olmaması için oturum düzeyinde bir danışma kilidi (advisory lock) tutulur.
+ */
 export async function migrate(pool: Pool): Promise<void> {
-  const sql = readFileSync(new URL("../migrations/001_init.sql", import.meta.url), "utf8");
-  await pool.query(sql);
+  const client = await pool.connect();
+  try {
+    await client.query("SELECT pg_advisory_lock(7172)");
+    try {
+      for (const f of MIGRATIONS) {
+        await client.query(readFileSync(new URL(`../migrations/${f}`, import.meta.url), "utf8"));
+      }
+    } finally {
+      await client.query("SELECT pg_advisory_unlock(7172)");
+    }
+  } finally {
+    client.release();
+  }
 }
 
 const GENESIS = "A".repeat(43);
