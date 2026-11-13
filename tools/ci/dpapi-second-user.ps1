@@ -23,8 +23,8 @@ $task  = 'saklaz-dpapi-izolasyon'
 New-Item -ItemType Directory -Path $work | Out-Null
 
 # Yerel komutların çıkış kodu her adımda denetlenir (hata zincirleme ilerlemesin).
-function Invoke-Checked([string]$what, [scriptblock]$cmd) {
-  & $cmd | Out-Host
+function Invoke-Checked([string]$what, [scriptblock]$Block) {
+  & $Block | Out-Host
   if ($LASTEXITCODE -ne 0) { throw "$what başarısız (çıkış $LASTEXITCODE)" }
 }
 
