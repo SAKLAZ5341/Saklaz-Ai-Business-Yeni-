@@ -53,7 +53,12 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @saklaz/crypto --filter @saklaz/protocol --filter @saklaz/agent run test
+      - name: DPAPI yerel modülü derlemesi (A3)
+        run: pnpm --filter @saklaz/win-keyprotect run build:native
+      - run: pnpm --filter @saklaz/crypto --filter @saklaz/protocol --filter @saklaz/win-keyprotect --filter @saklaz/agent run test
+      - name: DPAPI kullanıcı izolasyonu — ikinci yerel kullanıcı (A3)
+        shell: pwsh
+        run: ./tools/ci/dpapi-second-user.ps1
 
   dart-vectors:
     name: Dart uyumluluk vektörleri (S13)
