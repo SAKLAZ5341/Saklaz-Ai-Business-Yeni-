@@ -60,6 +60,93 @@ jobs:
         shell: pwsh
         run: ./tools/ci/dpapi-second-user.ps1
 
+  windows-package:
+    name: Windows ajan paketi (MVP alfa)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @saklaz/win-keyprotect run build:native
+      - run: pnpm --filter @saklaz/agent run build:dist
+      - name: Paketleme
+        shell: pwsh
+        run: ./tools/package/windows-agent.ps1 -Out "$env:RUNNER_TEMP\pkg"
+      - name: Duman testi — paketlenmiş ajan (gerçek DPAPI, şifreli kasa, SQLCipher; ağ yok)
+        shell: pwsh
+        run: |
+          $dir = "$env:RUNNER_TEMP\pkg-test"
+          Expand-Archive "$env:RUNNER_TEMP\pkg\saklaz-agent-win-x64.zip" -DestinationPath $dir
+          $exe = "$dir\saklaz-agent\saklaz-agent.cmd"
+          & $exe version; if ($LASTEXITCODE -ne 0) { throw 'version' }
+          & $exe selftest; if ($LASTEXITCODE -ne 0) { throw 'selftest' }
+          & $exe status --profile business; if ($LASTEXITCODE -ne 0) { throw 'status' }
+          $env:SAKLAZ_NO_START = '1'
+          & "$dir\saklaz-agent\install-startup.ps1" -AgentProfile business
+          if (-not (Get-ScheduledTask -TaskName 'SAKLAZ Agent (business)' -ErrorAction SilentlyContinue)) { throw 'başlangıç görevi kurulmadı' }
+          & "$dir\saklaz-agent\uninstall-startup.ps1" -AgentProfile business
+          if (Get-ScheduledTask -TaskName 'SAKLAZ Agent (business)' -ErrorAction SilentlyContinue) { throw 'başlangıç görevi kaldırılmadı' }
+          Write-Host 'Windows paket duman testi: GEÇTİ'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: saklaz-agent-win-x64
+          path: |
+            ${{ runner.temp }}/pkg/saklaz-agent-win-x64.zip
+            ${{ runner.temp }}/pkg/saklaz-agent-win-x64.zip.sha256
+          retention-days: 30
+
+  android-apk:
+    name: Android APK (MVP alfa)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Mobil arayüz derlemesi
+        run: |
+          pnpm --filter @saklaz/mobile-web run build
+          cp apps/mobile/web/dist/index.html apps/mobile/app/assets/web/index.html
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: 3.27.4
+          channel: stable
+      - name: Android projesi ve analiz
+        working-directory: apps/mobile/app
+        run: |
+          flutter create --org com.saklaz --project-name saklaz_ai --platforms android .
+          rm -rf test
+          python3 tool/prepare_android.py .
+          flutter pub get
+          flutter analyze --no-fatal-infos lib
+      - name: APK derlemesi
+        working-directory: apps/mobile/app
+        run: |
+          flutter build apk --release
+          cp build/app/outputs/flutter-apk/app-release.apk "$RUNNER_TEMP/saklaz-ai-0.1.0-alpha.apk"
+          (cd "$RUNNER_TEMP" && sha256sum saklaz-ai-0.1.0-alpha.apk > saklaz-ai-0.1.0-alpha.apk.sha256 && cat saklaz-ai-0.1.0-alpha.apk.sha256)
+          cp pubspec.lock "$RUNNER_TEMP/pubspec.lock"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: saklaz-ai-android-apk
+          path: |
+            ${{ runner.temp }}/saklaz-ai-0.1.0-alpha.apk
+            ${{ runner.temp }}/saklaz-ai-0.1.0-alpha.apk.sha256
+            ${{ runner.temp }}/pubspec.lock
+          retention-days: 30
+
   dart-vectors:
     name: Dart uyumluluk vektörleri (S13)
     runs-on: ubuntu-24.04

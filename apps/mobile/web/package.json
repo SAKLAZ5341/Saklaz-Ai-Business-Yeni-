@@ -1,0 +1,20 @@
+{
+  "name": "@saklaz/mobile-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SAKLAZ AI Android uygulamasının arayüzü (MVP alfa). Flutter kabuğunun WebView'ında çalışır; protokol ve kriptografi @saklaz/client-core'dan gelir. Gizli değerler yalnızca kabuğun güvenli deposunda (Android Keystore) tutulur.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@saklaz/client-core": "workspace:*",
+    "@saklaz/crypto": "workspace:*",
+    "@saklaz/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}
