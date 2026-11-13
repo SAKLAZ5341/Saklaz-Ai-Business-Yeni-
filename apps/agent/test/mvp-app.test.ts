@@ -147,7 +147,7 @@ describe("AgentService + telefon istemcisi (relay'siz)", () => {
     const fetchMock = vi.fn((url: string) =>
       Promise.resolve({
         status: url.endsWith("/v1/devices") ? 201 : 200,
-        json: () => Promise.resolve(url.endsWith("/login") ? { accessToken: "AT", refreshToken: "RT-0123456789", accountId: "acc" } : { ok: true }),
+        json: () => Promise.resolve(url.endsWith("/login") ? { accessToken: "test-erisim", refreshToken: "test-yenileme-yer-tutucu", accountId: "acc" } : { ok: true }),
       }),
     );
     vi.stubGlobal("fetch", fetchMock);

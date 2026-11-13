@@ -19,3 +19,17 @@ if "usesCleartextTraffic" not in s:
     s = s.replace("<application", '<application\n        android:usesCleartextTraffic="true"', 1)
 m.write_text(s, encoding="utf-8")
 print("AndroidManifest.xml hazır")
+
+# Android Gradle eklentisi: şablondaki 8.1.0, güncel androidx bağımlılıkları (webkit 1.14 ≥ 8.1.1) için eski.
+# Flutter şablonlarında birlikte kullanılan sürüm çifti: AGP 8.7.0 + Gradle 8.10.2.
+AGP = "8.7.0"
+GRADLE = "8.10.2"
+for name in ("settings.gradle", "settings.gradle.kts"):
+    f = root / "android" / name
+    if f.exists():
+        t = re.sub(r'(id\(?\s*"com\.android\.application"\s*\)?\s+version\s+)"[^"]+"', rf'\g<1>"{AGP}"', f.read_text(encoding="utf-8"))
+        f.write_text(t, encoding="utf-8")
+        print(f"{name}: AGP {AGP}")
+w = root / "android/gradle/wrapper/gradle-wrapper.properties"
+w.write_text(re.sub(r"gradle-[0-9.]+-(all|bin)\.zip", f"gradle-{GRADLE}-all.zip", w.read_text(encoding="utf-8")), encoding="utf-8")
+print(f"Gradle {GRADLE}")
