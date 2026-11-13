@@ -1,0 +1,12 @@
+# YALNIZCA YEREL AĞ TESTİ (MVP alfa). Relay'i TLS'siz olarak 8080 portunda yayımlar; Caddy başlatılmaz.
+# Uçtan uca şifreleme sürer, ancak oturum token'ları yerel ağda açık metin gider. İNTERNETE AÇMAYIN;
+# gerçek kullanım için docker-compose.yml (Caddy + TLS) kullanılır. Bu dosya CI'da sınanmadı.
+#
+#   SAKLAZ_RELAY_DOMAIN=lan.invalid SAKLAZ_RELAY_ID=saklaz-lantest SAKLAZ_SECRETS_DIR=/etc/saklaz/lantest \
+#   docker compose -f infra/relay/docker-compose.yml -f infra/relay/docker-compose.lan-test.yml \
+#     -p saklaz-lantest up -d --wait relay db
+services:
+  relay:
+    ports: ["${SAKLAZ_LAN_BIND:-0.0.0.0}:8080:8080"]
+    environment:
+      SAKLAZ_TRUST_PROXY_HOPS: "0"
