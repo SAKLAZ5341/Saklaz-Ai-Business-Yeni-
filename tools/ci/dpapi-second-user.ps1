@@ -22,6 +22,12 @@ $user  = 'saklazdpapit2'
 $task  = 'saklaz-dpapi-izolasyon'
 New-Item -ItemType Directory -Path $work | Out-Null
 
+# Yerel komutların çıkış kodu her adımda denetlenir (hata zincirleme ilerlemesin).
+function Invoke-Checked([string]$what, [scriptblock]$cmd) {
+  & $cmd | Out-Host
+  if ($LASTEXITCODE -ne 0) { throw "$what başarısız (çıkış $LASTEXITCODE)" }
+}
+
 $created = $false
 try {
   # 1. A: koru (aynı süreçte gidiş-dönüş de doğrulanır)
@@ -33,20 +39,21 @@ try {
   #    grubuna eklenir. Not: Yönetici olması A'nın DPAPI verisini çözmesine YETMEZ; test bunu da gösterir.
   $chars = [char[]]'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
   $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-  $bytes = New-Object byte[] 24; $rng.GetBytes($bytes)
+  # 14 karakter: daha uzun parolada "net user" etkileşimli onay ister (CI'da yanıtlanamaz).
+  $bytes = New-Object byte[] 10; $rng.GetBytes($bytes)
   $pw = 'Aa1!' + (-join ($bytes | ForEach-Object { $chars[$_ % $chars.Length] }))
-  net user $user $pw /add /expires:never | Out-Null
+  Invoke-Checked 'kullanıcı oluşturma' { net user $user $pw /add /expires:never }
   $created = $true
-  net localgroup Administrators $user /add | Out-Null
-  icacls $work /grant "${user}:(OI)(CI)M" | Out-Null
-  icacls $kp /grant "${user}:(OI)(CI)RX" /T /C /Q | Out-Null
+  Invoke-Checked 'Administrators grubuna ekleme' { net localgroup Administrators $user /add }
+  Invoke-Checked 'çalışma klasörü izni' { icacls $work /grant "${user}:(OI)(CI)M" }
+  Invoke-Checked 'paket okuma izni' { icacls $kp /grant "${user}:(OI)(CI)RX" /T /C /Q }
 
   # 3. B adına çalıştır (komut satırı uzunluk sınırı için .cmd sarmalayıcı)
   $result = Join-Path $work 'result-b.json'
   $cmd = Join-Path $work 'run-b.cmd'
   Set-Content -Path $cmd -Encoding ascii -Value "`"$node`" `"$probe`" cross `"$(Join-Path $work 'blob.bin')`" `"$result`" > `"$(Join-Path $work 'b.log')`" 2>&1"
-  schtasks /create /tn $task /ru $user /rp $pw /sc once /st 23:59 /tr "`"$cmd`"" /rl highest /f | Out-Null
-  schtasks /run /tn $task | Out-Null
+  Invoke-Checked 'görev oluşturma' { schtasks /create /tn $task /ru $user /rp $pw /sc once /st 23:59 /tr "`"$cmd`"" /rl highest /f }
+  Invoke-Checked 'görevi çalıştırma' { schtasks /run /tn $task }
   $deadline = (Get-Date).AddSeconds(180)
   while (-not (Test-Path $result) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
   if (-not (Test-Path $result)) {
