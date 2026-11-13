@@ -136,21 +136,20 @@ export const ProtectedKeyStore = {
     if (existsSync(path)) throw new KeyProtectionError("KEY_EXISTS");
     const header = buildHeader(protector, randomBytes(16));
     const kek = randomBytes(KEK_BYTES);
-    const wrapped = protector.wrap(kek, entropyFor(header));
-    if (wrapped.length < 1 || wrapped.length > MAX_WRAPPED) {
-      wipe(kek);
-      throw new KeyProtectionError("PROTECT_FAILED");
-    }
-    const len = new Uint8Array(4);
-    new DataView(len.buffer).setUint32(0, wrapped.length, false);
+    // KEK yalnızca başarılı dönüşte çağırana verilir; diğer HER çıkışta (wrap hatası dahil) silinir.
+    let ok = false;
     try {
+      const wrapped = protector.wrap(kek, entropyFor(header));
+      if (wrapped.length < 1 || wrapped.length > MAX_WRAPPED) throw new KeyProtectionError("PROTECT_FAILED");
+      const len = new Uint8Array(4);
+      new DataView(len.buffer).setUint32(0, wrapped.length, false);
       const body = concat(header, len, wrapped);
       writeNew(path, concat(body, fileMac(kek, body)));
-    } catch (e) {
-      wipe(kek);
-      throw e;
+      ok = true;
+      return kek;
+    } finally {
+      if (!ok) wipe(kek);
     }
-    return kek;
   },
 
   /**

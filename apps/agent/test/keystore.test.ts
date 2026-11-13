@@ -140,6 +140,54 @@ describe("bağlama ve izolasyon (sahte koruyucu)", () => {
     expectCode(() => ProtectedKeyStore.load(p, short), "KEY_FORMAT"); // 32 bayt değil
   });
 
+  it("wrap hata fırlatırsa: KEK sıfırlanır, dosya ve geçici dosya oluşmaz, hata aynen iletilir", () => {
+    const p = keyPath();
+    let seen: Uint8Array | undefined;
+    const throwing: KeyProtector = {
+      kind: "test-fake",
+      binding: () => ({ userSid: "S", machineGuid: "g" }),
+      wrap: (k) => {
+        seen = k;
+        expect(k.some((b) => b !== 0)).toBe(true); // wrap çağrıldığında KEK doluydu
+        throw new KeyProtectionError("PROTECT_FAILED", 5);
+      },
+      unwrap: () => new Uint8Array(0),
+    };
+    const e = expectCode(() => ProtectedKeyStore.create(p, throwing), "PROTECT_FAILED");
+    expect(e.win32Error).toBe(5);
+    expect(seen?.length).toBe(KEK_BYTES);
+    expect(seen?.every((b) => b === 0)).toBe(true); // finally → wipe(kek)
+    expect(existsSync(p)).toBe(false);
+    expect(existsSync(join(p, ".."))).toBe(false); // yazma aşamasına hiç geçilmedi
+  });
+
+  it("KEK silme yolu: geçersiz blob boyutu ve yazma hatasında KEK sıfırlanır; başarıda KEK korunur", () => {
+    const capture = (blob: Uint8Array) => {
+      const s: { kek?: Uint8Array } = {};
+      const prot: KeyProtector = {
+        kind: "test-fake",
+        binding: () => ({ userSid: "S", machineGuid: "g" }),
+        wrap: (k) => { s.kek = k; return blob; },
+        unwrap: () => new Uint8Array(0),
+      };
+      return { s, prot };
+    };
+    const big = capture(new Uint8Array(5000));
+    expectCode(() => ProtectedKeyStore.create(keyPath(), big.prot), "PROTECT_FAILED");
+    expect(big.s.kek?.every((b) => b === 0)).toBe(true);
+
+    const p = keyPath();
+    writeFileSync(join(p, ".."), "x"); // hedef klasör bir dosya → yazma hatası
+    const wf = capture(new Uint8Array(10));
+    expectCode(() => ProtectedKeyStore.create(p, wf.prot), "WRITE_FAILED");
+    expect(wf.s.kek?.every((b) => b === 0)).toBe(true);
+
+    const okc = capture(new Uint8Array(10));
+    const kek = ProtectedKeyStore.create(keyPath(), okc.prot);
+    expect(kek).toBe(okc.s.kek); // aynı tampon çağırana verilir
+    expect(kek.some((b) => b !== 0)).toBe(true); // başarıda silinmez
+  });
+
   it("koruyucu blob'daki bir değişikliği FARK ETMESE bile (DPAPI'nin denetlemediği başlık alanları) dosya reddedilir: KEY_INTEGRITY", () => {
     const p = keyPath();
     // Blob'un ilk 4 baytını yok sayan sahte koruyucu: Windows CI'da gerçek DPAPI'de görülen davranış.
