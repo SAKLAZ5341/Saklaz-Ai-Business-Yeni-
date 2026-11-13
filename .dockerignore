@@ -1,0 +1,19 @@
+# Relay imajının derleme bağlamı (Sprint 3 A2). İZİN LİSTESİ: yalnızca aşağıda açıkça izin verilen
+# dosyalar imaj derlemesine gönderilir. Gizli bilgi klasörleri (infra/relay/secrets), .git,
+# node_modules, test çıktıları ve diğer uygulamalar (ajan, mobil) bağlama hiç girmez.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!.npmrc
+!tsconfig.base.json
+!apps/*/package.json
+!packages/*/package.json
+!packages/crypto/src/**
+!packages/protocol/src/**
+!apps/relay/src/**
+!apps/relay/scripts/**
+!apps/relay/migrations/**
+# İzin verilen klasörlerin içinde bile hariç tutulanlar
+**/*.test.ts
+**/test-vectors/**

@@ -1,60 +1,115 @@
-# SAKLAZ AI relay — şirket içi VM (BUSINESS) veya kişisel VPS (PERSONAL) için.
-# TASLAK: Sprint 2'de Docker ortamı olmadığından çalıştırılmadı. Sprint 5'te IT ile kurulumda doğrulanacak.
-# Her çalışma alanı AYRI bir kurulumdur (ayrı sunucu, ayrı veritabanı, ayrı gizli bilgiler).
+# SAKLAZ AI relay — tek bir çalışma alanının kurulumu (Sprint 3 A2).
+#
+# HER ÇALIŞMA ALANI AYRI BİR KURULUMDUR (v0.3 mimari kararı):
+#   PERSONAL → kişisel VPS     docker compose -p saklaz-personal --env-file personal.env up -d
+#   BUSINESS → şirket DMZ VM   docker compose -p saklaz-business --env-file business.env up -d
+# Proje adı (-p) farklı olduğu için veritabanı volume'u, ağlar ve konteynerler ayrıdır; her kurulumun
+# kendi gizli bilgi klasörü (SAKLAZ_SECRETS_DIR) ve kendi relay kimliği (SAKLAZ_RELAY_ID) vardır.
+# Bir kurulumun token'ı diğerinde geçmez (farklı JWT anahtarı ve "iss").
+#
+# Gizli bilgiler imajda veya ortam değişkeninde DEĞİL, dosyadadır: scripts/init-secrets.sh üretir.
+# Ayrıntılar ve üretim kontrol listesi: infra/relay/README.md, docs/deploy/RELAY-DAGITIM-GUVENLIGI.md
+#
+# Dışarıya açılan TEK port Caddy'nin HTTPS portudur. Relay ve veritabanı portları yayımlanmaz.
+name: ${SAKLAZ_PROJECT:-saklaz-relay}
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "5" }
+
 services:
   caddy:
-    image: caddy:2.10-alpine
+    image: ${SAKLAZ_CADDY_IMAGE:-caddy:2.10.2-alpine}
     restart: unless-stopped
-    ports: ["443:443"]            # dışarıya açılan TEK port
+    ports: ["${SAKLAZ_HTTPS_BIND:-0.0.0.0}:${SAKLAZ_HTTPS_PORT:-443}:443"]
+    environment:
+      SAKLAZ_RELAY_DOMAIN: ${SAKLAZ_RELAY_DOMAIN:?alan adı gerekli (ör. relay.ornek.com.tr)}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
+      - caddy_data:/data              # sertifikalar ve özel anahtarları (kalıcı)
+    tmpfs: [/config, /tmp]
     networks: [edge]
     read_only: true
     cap_drop: [ALL]
     cap_add: [NET_BIND_SERVICE]
     security_opt: ["no-new-privileges:true"]
+    depends_on:
+      relay: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+    logging: *logging
 
   relay:
+    image: ${SAKLAZ_RELAY_IMAGE:-saklaz-relay:local}
     build: { context: ../.., dockerfile: infra/relay/Dockerfile }
     restart: unless-stopped
+    init: true                        # PID 1 = tini: sinyaller iletilir, yetim süreç kalmaz
     environment:
-      SAKLAZ_RELAY_ID: ${SAKLAZ_RELAY_ID:?çalışma alanına özgü relay kimliği gerekli}
-      SAKLAZ_DATABASE_URL_FILE: /run/secrets/database_url
+      SAKLAZ_RELAY_ID: ${SAKLAZ_RELAY_ID:?çalışma alanına özgü relay kimliği gerekli (ör. saklaz-personal)}
+      SAKLAZ_DB_HOST: db
+      SAKLAZ_DB_USER: saklaz
+      SAKLAZ_DB_NAME: saklaz
+      SAKLAZ_DB_PASSWORD_FILE: /run/secrets/db_password
       SAKLAZ_JWT_PRIVATE_KEY_FILE: /run/secrets/jwt_private
       SAKLAZ_JWT_PUBLIC_KEY_FILE: /run/secrets/jwt_public
       SAKLAZ_MFA_KEY_FILE: /run/secrets/mfa_key
-    secrets: [database_url, jwt_private, jwt_public, mfa_key]
-    networks: [edge, internal]    # porta dışarıdan erişim yok; yalnızca caddy üzerinden
+      SAKLAZ_TRUST_PROXY_HOPS: "1"    # yalnızca önündeki Caddy'ye güvenilir
+      SAKLAZ_MIGRATE: ${SAKLAZ_MIGRATE:-apply}
+      SAKLAZ_LOG_LEVEL: ${SAKLAZ_LOG_LEVEL:-info}
+      SAKLAZ_DB_WAIT_MS: "120000"
+    secrets: [db_password, jwt_private, jwt_public, mfa_key]
+    networks: [edge, internal]        # dışarıdan doğrudan erişim yok; yalnızca Caddy üzerinden
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    depends_on: [db]
+    pids_limit: 256
+    mem_limit: 512m
+    stop_grace_period: 15s
+    depends_on:
+      db: { condition: service_healthy }
+    logging: *logging
 
   db:
-    image: postgres:16.10-bookworm
+    image: ${SAKLAZ_POSTGRES_IMAGE:-postgres:16.10-bookworm}
     restart: unless-stopped
     environment:
       POSTGRES_DB: saklaz
       POSTGRES_USER: saklaz
       POSTGRES_PASSWORD_FILE: /run/secrets/db_password
     secrets: [db_password]
-    volumes: [db_data:/var/lib/postgresql/data]
-    networks: [internal]          # yalnızca iç ağ; dışarıya port yok
+    volumes:
+      - db_data:/var/lib/postgresql/data   # KALICI VERİ: konteyner silinse de volume kalır
+    tmpfs: [/tmp, /var/run/postgresql]
+    networks: [internal]              # yalnızca iç ağ; dışarıya port yok, internete çıkış yok
+    read_only: true
+    cap_drop: [ALL]
+    # Resmî imajın giriş betiği ilk kurulumda dosya sahipliğini ayarlar ve postgres kullanıcısına geçer.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
     security_opt: ["no-new-privileges:true"]
+    shm_size: 128m
+    stop_grace_period: 30s            # düzgün kapanma (veri dosyalarının tutarlılığı için)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h /var/run/postgresql -U saklaz -d saklaz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
+    logging: *logging
 
 networks:
   edge: {}
-  internal: { internal: true }    # internete çıkışı olmayan ağ
+  internal: { internal: true }        # internete çıkışı olmayan ağ
 
 volumes:
   caddy_data: {}
   db_data: {}
 
 secrets:
-  database_url: { file: ./secrets/database_url }
-  jwt_private: { file: ./secrets/jwt_private.pem }
-  jwt_public: { file: ./secrets/jwt_public.pem }
-  mfa_key: { file: ./secrets/mfa_key.hex }
-  db_password: { file: ./secrets/db_password }
+  db_password: { file: "${SAKLAZ_SECRETS_DIR:-./secrets}/db_password" }
+  jwt_private: { file: "${SAKLAZ_SECRETS_DIR:-./secrets}/jwt_private.pem" }
+  jwt_public: { file: "${SAKLAZ_SECRETS_DIR:-./secrets}/jwt_public.pem" }
+  mfa_key: { file: "${SAKLAZ_SECRETS_DIR:-./secrets}/mfa_key.hex" }
