@@ -47,6 +47,16 @@ function decryptSecret(key: Uint8Array, blob: Buffer): Uint8Array {
   return Buffer.concat([d.update(blob.subarray(28)), d.final()]);
 }
 
+/** Açılış denetimi için: verilen anahtar bu şifreli TOTP sırrını çözebiliyor mu? (AES-GCM etiketi doğrulanır.) */
+export function canDecryptSecret(key: Uint8Array, blob: Buffer): boolean {
+  try {
+    decryptSecret(key, blob);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export class Accounts {
   private readonly now: () => number;
   constructor(
