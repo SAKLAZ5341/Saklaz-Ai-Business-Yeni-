@@ -98,10 +98,12 @@ Yine de relay şunları korur; dağıtım güvenliği bunlar içindir:
 
 ## 8. Temel imajlar
 
-| İmaj | Sabitleme |
-|---|---|
-| `node:22.23.4-bookworm-slim` | Dockerfile `ARG NODE_IMAGE` |
-| `postgres:16.10-bookworm` | Compose `SAKLAZ_POSTGRES_IMAGE` |
-| `caddy:2.10.2-alpine` | Compose `SAKLAZ_CADDY_IMAGE` |
+Etiket + özet (digest) ile sabitlenmiştir. Etiket ileride başka bir imajı gösterse bile aynı imaj kullanılır. Özetler 2026-11-13'te CI'da çözüldü ve her CI çalışmasında yeniden yazdırılır.
 
-CI, bu etiketlerin özetlerini (digest) her çalışmada yazdırır. Üretimde imajlar `etiket@sha256:<özet>` biçiminde sabitlenmelidir; özetler A2 raporundadır. Güvenlik açığı taraması ve SBOM A9'da eklenecek.
+| İmaj | Özet (çok mimarili dizin) | Nerede |
+|---|---|---|
+| `node:22.23.4-bookworm-slim` | `sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d` | Dockerfile `ARG NODE_IMAGE` |
+| `postgres:16.10-bookworm` | `sha256:38471f330eb885e04de130b768d6db4e10469e2311879c7e5c699f6d2d8a1c74` | Compose `SAKLAZ_POSTGRES_IMAGE` |
+| `caddy:2.10.2-alpine` | `sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d` | Compose `SAKLAZ_CADDY_IMAGE` |
+
+Güvenlik yamaları için özetler planlı olarak güncellenir: Dependabot'un Docker desteği veya elle, CI yeşil olduktan sonra. Güvenlik açığı taraması ve SBOM A9'da eklenecek.

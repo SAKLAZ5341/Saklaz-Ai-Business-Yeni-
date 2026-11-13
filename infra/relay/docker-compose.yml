@@ -10,6 +10,7 @@
 # Gizli bilgiler imajda veya ortam değişkeninde DEĞİL, dosyadadır: scripts/init-secrets.sh üretir.
 # Ayrıntılar ve üretim kontrol listesi: infra/relay/README.md, docs/deploy/RELAY-DAGITIM-GUVENLIGI.md
 #
+# Temel imajlar etiket + özet (digest) ile sabitlenmiştir; özetler CI'da her çalışmada yazdırılır.
 # Dışarıya açılan TEK port Caddy'nin HTTPS portudur. Relay ve veritabanı portları yayımlanmaz.
 name: ${SAKLAZ_PROJECT:-saklaz-relay}
 
@@ -19,7 +20,7 @@ x-logging: &logging
 
 services:
   caddy:
-    image: ${SAKLAZ_CADDY_IMAGE:-caddy:2.10.2-alpine}
+    image: ${SAKLAZ_CADDY_IMAGE:-caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d}
     restart: unless-stopped
     ports: ["${SAKLAZ_HTTPS_BIND:-0.0.0.0}:${SAKLAZ_HTTPS_PORT:-443}:443"]
     environment:
@@ -74,7 +75,7 @@ services:
     logging: *logging
 
   db:
-    image: ${SAKLAZ_POSTGRES_IMAGE:-postgres:16.10-bookworm}
+    image: ${SAKLAZ_POSTGRES_IMAGE:-postgres:16.10-bookworm@sha256:38471f330eb885e04de130b768d6db4e10469e2311879c7e5c699f6d2d8a1c74}
     restart: unless-stopped
     environment:
       POSTGRES_DB: saklaz

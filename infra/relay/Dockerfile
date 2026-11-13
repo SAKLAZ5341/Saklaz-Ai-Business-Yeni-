@@ -11,7 +11,8 @@
 # .dockerignore izin listesiyle sınırlıdır; infra/relay/secrets bağlama hiç girmez.
 #
 # Temel imajlar özetle (digest) sabitlenir; etiket değişse bile aynı imaj kullanılır.
-ARG NODE_IMAGE=node:22.23.4-bookworm-slim
+# Özet, CI'daki "Temel imajların özetleri" adımında çözülmüştür (2026-11-13; çok mimarili dizin özeti).
+ARG NODE_IMAGE=node:22.23.4-bookworm-slim@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d
 
 FROM ${NODE_IMAGE} AS build
 WORKDIR /src
