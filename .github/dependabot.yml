@@ -7,3 +7,10 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+    groups:
+      # CodeQL'in init ve analyze adımları aynı sürümde olmak ZORUNDADIR: farklı ana sürümler
+      # birbirinin yapılandırmasını okuyamaz (PR #2 ve #5'te analyze bu yüzden kırıldı).
+      # Bu grup, codeql-action'ın bütün alt eylemlerini tek bir PR'da günceller.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
