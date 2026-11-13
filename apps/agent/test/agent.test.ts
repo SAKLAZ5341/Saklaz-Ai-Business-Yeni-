@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readdirSync, readlinkSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { computeSas, fromB64, initCrypto } from "@saklaz/crypto";
@@ -11,9 +11,39 @@ beforeAll(initCrypto);
 
 const WS = "ws_personalTestWS000001";
 const dirs: string[] = [];
+const agents: AgentCore[] = [];
 afterEach(() => {
+  // Önce bütün ajanlar kapatılır: Windows açık dosyanın silinmesine izin vermez (A0/B1).
+  // Klasör silme hatası yutulmaz; bir tanıtıcı sızarsa test Windows'ta kırmızı olur.
+  for (const a of agents.splice(0)) a.close();
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
+
+/**
+ * Dosyaya açık tanıtıcı kalmadığını platforma göre doğrular.
+ * Linux: /proc/self/fd. Windows: açık dosya yeniden adlandırılamaz. Diğerleri: desteklenmez (test hata verir).
+ */
+function fileIsReleased(file: string): boolean {
+  if (process.platform === "linux") {
+    return !readdirSync("/proc/self/fd").some((fd) => {
+      try {
+        return readlinkSync(`/proc/self/fd/${fd}`).startsWith(file);
+      } catch {
+        return false;
+      }
+    });
+  }
+  if (process.platform === "win32") {
+    try {
+      renameSync(file, `${file}.probe`);
+      renameSync(`${file}.probe`, file);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  throw new Error(`desteklenmeyen platform: ${process.platform}`);
+}
 
 function tempDir() {
   const d = mkdtempSync(join(tmpdir(), "saklaz-agent-"));
@@ -38,6 +68,7 @@ function setup(opts: { dir?: string; vault?: MemoryVault; clock?: Clock } = {}) 
   const clock = opts.clock ?? new Clock();
   let lockdownCalls = 0;
   const agent = new AgentCore({ dbPath: join(dir, "agent.db"), vault, now: clock.now, onLockdown: () => lockdownCalls++, label: "Ev bilgisayarı" });
+  agents.push(agent);
   return { dir, vault, clock, agent, lockdownCalls: () => lockdownCalls };
 }
 
@@ -238,6 +269,36 @@ describe("geri yükleme (rollback) koruması (S20)", () => {
     const { agent, dir } = setup();
     agent.close();
     expect(() => openAgentDb(join(dir, "agent.db"), new MemoryVault())).toThrow();
+  });
+
+  it("yanlış anahtarla açma denemesi dosya tanıtıcısı bırakmaz (Windows dosya kilidi, A0)", () => {
+    const { agent, dir } = setup();
+    agent.close();
+    const file = join(dir, "agent.db");
+    expect(() => openAgentDb(file, new MemoryVault())).toThrow();
+    expect(fileIsReleased(file)).toBe(true);
+  });
+
+  it("ajan kurulumu veritabanı açıldıktan sonra hata verirse dosya tanıtıcısı bırakılmaz (A0)", () => {
+    const dir = tempDir();
+    const file = join(dir, "agent.db");
+    class FailingVault extends MemoryVault {
+      override get(name: string): Uint8Array | undefined {
+        if (name === "agent-sign-seed") throw new Error("kasa okunamadı (test)");
+        return super.get(name);
+      }
+    }
+    expect(() => new AgentCore({ dbPath: file, vault: new FailingVault() })).toThrow("kasa okunamadı (test)");
+    expect(fileIsReleased(file)).toBe(true);
+  });
+
+  it("ajan kapatıldıktan sonra veritabanı dosyası serbesttir; close() iki kez çağrılabilir", () => {
+    const { agent, dir } = setup();
+    const file = join(dir, "agent.db");
+    expect(fileIsReleased(file)).toBe(false);
+    agent.close();
+    agent.close();
+    expect(fileIsReleased(file)).toBe(true);
   });
 });
 

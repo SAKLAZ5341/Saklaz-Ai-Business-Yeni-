@@ -75,27 +75,31 @@ void main() {
     expect(toB64u(sig.bytes), equals(m['sig']));
   });
 
-  test('İşleme bağlı onay: özet ve onay imzası birebir aynı', () async {
+  test('İşleme bağlı onay: özet girdisi, özet ve onay imzası birebir aynı', () async {
     final a = vectors['approval'] as Map;
     final c = a['context'] as Map;
-    final digest = await taggedHash(
-        'SAKLAZ-v1/approval-digest',
-        utf8.encode(canonicalize({
-          'v': 1,
-          'agentId': c['agentId'],
-          'phoneId': c['phoneId'],
-          'approvalId': c['approvalId'],
-          'taskId': c['taskId'],
-          'stepId': c['stepId'],
-          'action': c['action'],
-          'challenge': c['challenge'],
-          'issuedAt': c['issuedAt'],
-          'expiresInSec': c['expiresInSec'],
-        })),
-        32);
+    // Alan adları protokolün kendi adlarıdır (ör. çalışma alanı "ws"). Bkz. packages/protocol/src/approval.ts.
+    // Sprint 3 A0 (B2): v0.3'te eklenen "ws" alanı bu testte eksikti; önce kanonik girdi
+    // karşılaştırılır ki bir sapmada hangi alanın farklı olduğu görülebilsin.
+    final input = utf8.encode(canonicalize({
+      'v': 1,
+      'ws': c['workspaceId'],
+      'agentId': c['agentId'],
+      'phoneId': c['phoneId'],
+      'approvalId': c['approvalId'],
+      'taskId': c['taskId'],
+      'stepId': c['stepId'],
+      'action': c['action'],
+      'challenge': c['challenge'],
+      'issuedAt': c['issuedAt'],
+      'expiresInSec': c['expiresInSec'],
+    }));
+    expect(utf8.decode(input), equals(utf8.decode(hex(a['digestInputHex'] as String))));
+    final digest = await taggedHash('SAKLAZ-v1/approval-digest', input, 32);
     expect(toB64u(digest), equals(a['digest']));
     final bytes = utf8.encode(canonicalize({
       'v': 1,
+      'ws': c['workspaceId'],
       'agentId': c['agentId'],
       'phoneId': c['phoneId'],
       'approvalId': c['approvalId'],

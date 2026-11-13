@@ -109,42 +109,48 @@ export class AgentCore {
   constructor(private readonly o: AgentOptions) {
     this.now = o.now ?? Date.now;
     this.db = openAgentDb(o.dbPath, o.vault);
-    this.audit = new AuditLog(this.db);
-    this.lockdown = new Lockdown(this.db);
-    this.rollback = new RollbackGuard(this.db, o.vault);
-    this.startup = this.rollback.checkOnStartup(this.now());
+    try {
+      this.audit = new AuditLog(this.db);
+      this.lockdown = new Lockdown(this.db);
+      this.rollback = new RollbackGuard(this.db, o.vault);
+      this.startup = this.rollback.checkOnStartup(this.now());
 
-    // Kimlik: anahtarlar kasada, cihaz kimliği veritabanında.
-    let seed = o.vault.get(SIGN_SEED);
-    if (!seed) {
-      seed = randomBytes(32);
-      o.vault.set(SIGN_SEED, seed);
-    }
-    this.sign = signingKeyPairFromSeed(seed);
-    let dhs = o.vault.get(DH_SECRET);
-    if (!dhs) {
-      dhs = generateDhKeyPair().secretKey;
-      o.vault.set(DH_SECRET, dhs);
-    }
-    this.dh = dhKeyPairFromSecret(dhs);
-    let id = getMeta(this.db, "device_id");
-    if (!id) {
-      id = `dev_${toB64(randomBytes(16))}`;
-      setMeta(this.db, "device_id", id);
-    }
-    this.deviceId = id;
+      // Kimlik: anahtarlar kasada, cihaz kimliği veritabanında.
+      let seed = o.vault.get(SIGN_SEED);
+      if (!seed) {
+        seed = randomBytes(32);
+        o.vault.set(SIGN_SEED, seed);
+      }
+      this.sign = signingKeyPairFromSeed(seed);
+      let dhs = o.vault.get(DH_SECRET);
+      if (!dhs) {
+        dhs = generateDhKeyPair().secretKey;
+        o.vault.set(DH_SECRET, dhs);
+      }
+      this.dh = dhKeyPairFromSecret(dhs);
+      let id = getMeta(this.db, "device_id");
+      if (!id) {
+        id = `dev_${toB64(randomBytes(16))}`;
+        setMeta(this.db, "device_id", id);
+      }
+      this.deviceId = id;
 
-    this.audit.append("agent.start", { vault: o.vault.kind, locked: this.lockdown.locked }, this.now());
-    if (this.startup.restoreDetected) {
-      this.audit.append(
-        "restore.detected",
-        { dbEpoch: this.startup.dbEpoch, vaultEpoch: this.startup.vaultEpoch, floor: this.startup.restoreFloorMs ?? 0 },
-        this.now(),
-      );
-    }
+      this.audit.append("agent.start", { vault: o.vault.kind, locked: this.lockdown.locked }, this.now());
+      if (this.startup.restoreDetected) {
+        this.audit.append(
+          "restore.detected",
+          { dbEpoch: this.startup.dbEpoch, vaultEpoch: this.startup.vaultEpoch, floor: this.startup.restoreFloorMs ?? 0 },
+          this.now(),
+        );
+      }
 
-    const roster = loadRoster(this.db);
-    if (roster) this.activate(roster);
+      const roster = loadRoster(this.db);
+      if (roster) this.activate(roster);
+    } catch (e) {
+      // Kurulum yarıda kalırsa veritabanı tanıtıcısı açık bırakılmaz (Windows dosya kilidi, A0/B1).
+      this.db.close();
+      throw e;
+    }
   }
 
   get workspaceId(): string | undefined {
@@ -471,9 +477,10 @@ export class AgentCore {
     return { to: p.phone.phoneId, kind: "pair", ct: toB64(concat(box.nonce, box.ciphertext)) };
   }
 
+  /** Birden fazla çağrılabilir; ikinci çağrı etkisizdir. */
   close(): void {
     this.channel?.dropAll();
-    this.db.close();
+    if (this.db.open) this.db.close();
   }
 }
 

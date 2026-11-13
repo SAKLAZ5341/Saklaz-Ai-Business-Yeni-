@@ -78,6 +78,9 @@ importers:
       jose:
         specifier: 6.2.17
         version: 6.2.17
+      libsodium-wrappers-sumo:
+        specifier: 0.8.4
+        version: 0.8.4
       pg:
         specifier: 8.23.1
         version: 8.23.1
@@ -100,6 +103,12 @@ importers:
       '@types/ws':
         specifier: 8.18.2
         version: 8.18.2
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
+      tsx:
+        specifier: 4.23.15
+        version: 4.23.15
 
   packages/crypto:
     dependencies:
