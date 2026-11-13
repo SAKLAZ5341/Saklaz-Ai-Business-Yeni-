@@ -1,7 +1,8 @@
-# Sprint 3 — Planlama Raporu (onay bekliyor)
+# Sprint 3 — Planlama Raporu (onaylandı)
 
 > **Tarih:** 2026-11-12
-> **Durum:** ⏸ Proje sahibinin onayını bekliyor. Bu rapor için **hiçbir kod değiştirilmedi.**
+> **Durum:** ✅ Plan ve K1–K5 kararları proje sahibi tarafından onaylandı (2026-11-13). Uygulama aşama aşama, her aşama sonunda ayrı onayla ilerler.
+> **Uygulama durumu (2026-11-13):** A0, A1, A2 tamamlandı ve `main`'de (`13afcf1`). K5 Ruleset ile etkin. A3 ve sonrası onay bekliyor. Ayrıntı: §9.
 > **Kaynaklar:** Sprint 2 kaynak kodu ve testleri, `SECURITY.md` v0.3 (S1–S23), `docs/FAZ1-PLAN.md` §13 (13 haftalık plan), `docs/sprints/SPRINT-2-RAPOR.md` ve **yeni repodaki ilk gerçek GitHub CI çalışması**.
 > **Dil kuralı:** Bu belgedeki hiçbir güvenlik ifadesi mutlak değildir. Hepsi `SECURITY.md` §0'daki V1–V7 varsayımlarına bağlıdır.
 
@@ -340,14 +341,57 @@ Sprint 2'de protokol ve ajan düzeyinde testliydi. S3'te **gerçek relay üzerin
 ### 7.3 Relay
 - Gerçek sunucu kurulumu S5'tedir (kişisel VPS + şirket DMZ). S3'te yalnızca CI'daki Docker testi yapılır. Bu, gerçek bir sunucuda çalıştığı anlamına **gelmez**.
 
-## 8. Onayınızı Bekleyen Kararlar
+## 8. Kararlar (onaylandı: 2026-11-13)
 
-| # | Karar | Önerim |
+| # | Karar | Proje sahibinin kararı ve şartları |
 |---|---|---|
-| **K1** | 13 haftalık planın etkisi | **K1-A:** S3 sağlamlaştırma (3 hf) + S3b araçlar (2 hf) ≈ 16 hafta |
-| **K2** | DPAPI/TPM erişim yolu | **K2-A:** Kendi küçük N-API eklentimiz |
-| **K3** | TPM NV sayacı (yönetici yetkisi gerektirebilir) | S3'te yalnızca prototip ve ölçüm. Üretim kararı gerçek cihaz testinden sonra. |
-| **K4** | CD kapsamı | GHCR'ye imaj + SBOM + kaynak kanıtı. Sunucuya **otomatik dağıtım yok.** |
-| **K5** | `main` dal koruması | Açılması (sizin repo ayarlarınızdan) |
+| **K1** | Plan süresi | S3b ayrı sprint olarak planlanır. Toplam süre ≈ 16 hafta. |
+| **K2** | DPAPI/TPM erişim yolu | Minimal yerel eklenti. Gereksiz yetki kullanılmaz. Anahtarlar **hiçbir şekilde düz metin olarak diske yazılmaz.** TPM desteği gerçek cihazda doğrulanmadan TPM koruması varmış gibi raporlanmaz. |
+| **K3** | TPM NV sayacı | Bu sprintte yalnızca araştırılır ve gerçek cihazda ölçülür. **Yönetici izni gerektiren uygulama yapılmaz.** |
+| **K4** | CD kapsamı | Relay imajı GitHub Packages'a (GHCR) yayımlanır. **Otomatik sunucu dağıtımı kesinlikle yapılmaz.** |
+| **K5** | `main` dal koruması | Etkinleştirilir. Zorunlu CI kontrolleri başarılı olmadan birleştirme yapılmaz. Zorla push (force push) ve dal silme engellenir. |
 
-Onayınızla birlikte A0'dan başlarım. Her aşamadan sonra CI sonucunu kontrol eder, kırmızıysa bir sonrakine geçmem.
+**Çalışma kuralı:** Her aşama ayrı commit/PR ile sunulur. Aşama sonunda rapor verilir ve **yeni onay beklenir.** CI kırmızıysa sonraki aşamaya geçilmez.
+
+## 9. Uygulama durumu (GitHub API'den doğrulandı, 2026-11-13)
+
+### 9.1 Aşamalar
+
+| Aşama | Durum | PR | `main`'e ulaşma | Rapor |
+|---|---|---|---|---|
+| A0 — CI'ı yeşile çekmek | ✅ | #6 → `main` | `13afcf1` (2026-11-13 10:56) | SPRINT-3-A0-RAPOR.md |
+| A1 — TOTP tekrar kullanım koruması | ✅ | #7 → A0 dalı (09:32) | #6 ile | SPRINT-3-A1-RAPOR.md |
+| A2 — Docker | ✅ | #8 → A1 dalı (09:12) | #7 ve #6 ile | SPRINT-3-A2-RAPOR.md |
+| A3 — Kasa v2 ve DPAPI | ⏸ Onay bekliyor | — | — | — |
+| A4–A10 | ⬜ | — | — | — |
+
+Saatler İstanbul saatidir. Bütün birleştirmeler proje sahibi tarafından GitHub arayüzünden "merge commit" yöntemiyle yapıldı. PR'lar zincir halinde bir önceki PR'ın dalına birleştirildi. Her adımda dosya ağacının değişmediği doğrulandı: `2fb6748` = `c36043f`, `4d79c86` = `c36043f`, `13afcf1` = `840fcca`.
+
+**`main` (`13afcf1`) üzerinde CI:** Bütün işler yeşil. Linux 205 test (crypto 34, protocol 88, agent 26, relay 57), Windows 148, Dart 7/7, Pester 8/8, Docker 13/13, gitleaks ve CodeQL.
+
+### 9.2 K5 — `main` dal koruması
+
+API'den okunan yapılandırma (`GET /repos/{repo}/rulesets/27197647`):
+
+| Alan | Değer |
+|---|---|
+| Ruleset | `27197647`, "SAKLAZ Main Protection (K5)" |
+| Durum | `active`; 2026-11-13 14:54'te proje sahibi tarafından oluşturuldu |
+| Hedef | `refs/heads/main` (dal) |
+| Atlatma listesi | **Boş** (`bypass_actors: []`, `current_user_can_bypass: never`) |
+| Dal silme | Engelli (`deletion`) |
+| Zorla push | Engelli (`non_fast_forward`) |
+| Pull request | Zorunlu; onay sayısı 0 (tek geliştirici; GitHub kendi PR'ını onaylamaya izin vermez); **yalnızca `merge`** yöntemi |
+| Zorunlu kontroller (dal güncel olmalı) | `TypeScript (lint, sınır, tip, test) — ubuntu + PostgreSQL`, `Windows — kripto, protokol ve ajan (SQLCipher yerel modülü)`, `Dart uyumluluk vektörleri (S13)`, `Windows envanter betiği (Pester, D6)`, `Gizli bilgi taraması (gitleaks)`, `Docker — relay imajı ve Compose (A2)`: hepsi GitHub Actions'a (15368) bağlı. `CodeQL`: GitHub Advanced Security'ye (57789) bağlı. |
+| Kod tarama | CodeQL; güvenlik uyarısı eşiği **Medium ve üzeri**, genel uyarı eşiği `errors` |
+| `main` için uygulanan kurallar (`GET /rules/branches/main`) | deletion, non_fast_forward, pull_request, required_status_checks, code_scanning (hepsi `27197647`) |
+
+**Doğrulanamayanlar:** Kuralların pratikte nasıl uygulandığı, örneğin doğrudan push'un gerçekten reddedilmesi, denenmedi. `main`'e doğrudan push yapılmaması kuralı gereği bilinçli olarak denenmedi. İlk gerçek doğrulama, bu Ruleset altında birleştirilen ilk PR olacak.
+
+**Repo geneli:** Squash ve rebase birleştirme repo düzeyinde hâlâ açık. Ruleset bunları `main` için engelliyor; diğer dallar için açık kalması bilinçli bir tercih değil, henüz karar verilmemiş bir ayar.
+
+### 9.3 Açık işler
+
+- 5 Dependabot PR'ı (#1–#5): CI eylemlerinin ana sürüm yükseltmeleri. Proje sahibinin kararıyla bekletiliyor.
+- Sprint 3 belgelerinin `main`'e alınması: bu güncellemeyle birlikte `docs/s3-kararlar` dalından PR açılıyor.
+
