@@ -17,11 +17,21 @@ import { fileURLToPath } from "node:url";
 import { hotp, totpStep } from "../src/totp.js";
 
 const ENABLED = process.env["SAKLAZ_DOCKER_TEST"] === "1";
-const IMAGE = process.env["SAKLAZ_RELAY_IMAGE"] ?? "saklaz-relay:test";
+// İmaj adı ortam değişkeninden ALINMAZ: komut satırına giden değerler dışarıdan denetlenemesin
+// (CodeQL js/indirect-command-line-injection). CI bu etiketle derler (.github/workflows/ci.yml).
+const IMAGE = "saklaz-relay:test";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const COMPOSE_FILE = join(ROOT, "infra", "relay", "docker-compose.yml");
 const INIT_SECRETS = join(ROOT, "infra", "relay", "scripts", "init-secrets.sh");
-const LOG_DIR = process.env["SAKLAZ_DOCKER_LOG_DIR"] ?? join(tmpdir(), "saklaz-docker-logs");
+/**
+ * Komutlara (docker, sudo) parametre olarak giden yollar yalnızca bu kalıba uyabilir: mutlak,
+ * boşluksuz, kabuk özel karakteri içermeyen. Uymazsa test hiç çalışmaz.
+ */
+function safePath(p: string, what: string): string {
+  if (!/^\/[A-Za-z0-9._/-]+$/.test(p) || p.includes("..")) throw new Error(`güvensiz yol (${what})`);
+  return p;
+}
+const LOG_DIR = safePath(process.env["SAKLAZ_DOCKER_LOG_DIR"] ?? join(tmpdir(), "saklaz-docker-logs"), "SAKLAZ_DOCKER_LOG_DIR");
 const PASSWORD = "çok-gizli-parola-docker-123";
 
 // ───────────────────────── yardımcılar ─────────────────────────
@@ -217,7 +227,7 @@ function saveLogs(w: Workspace, label: string): string {
 // ───────────────────────── testler ─────────────────────────
 
 describe.skipIf(!ENABLED).sequential("relay Docker kurulumu (A2)", () => {
-  const work = ENABLED ? mkdtempSync(join(tmpdir(), "saklaz-docker-")) : "";
+  const work = ENABLED ? safePath(mkdtempSync(join(tmpdir(), "saklaz-docker-")), "geçici klasör") : "";
   const personal: Workspace = { project: "saklaz-a2-personal", relayId: "saklaz-personal", port: 18443, secretsDir: join(work, "personal") };
   const business: Workspace = { project: "saklaz-a2-business", relayId: "saklaz-business", port: 18444, secretsDir: join(work, "business") };
   let alice: User;
@@ -442,7 +452,8 @@ describe.skipIf(!ENABLED).sequential("relay Docker kurulumu (A2)", () => {
     const mfa = join(personal.secretsDir, "mfa_key.hex");
     ok(compose(personal, ["stop", "relay"]), "relay stop");
     ok(sudo(["cp", "-p", mfa, `${mfa}.yedek`]), "yedek");
-    ok(sudo(["sh", "-c", `openssl rand -hex 32 > ${mfa} && chown 1000:1000 ${mfa} && chmod 0400 ${mfa}`]), "yanlış anahtar");
+    // Yol kabuk dizesine gömülmez; "$1" konumsal parametresi olarak geçirilir.
+    ok(sudo(["sh", "-c", 'openssl rand -hex 32 > "$1" && chown 1000:1000 "$1" && chmod 0400 "$1"', "sh", mfa]), "yanlış anahtar");
     try {
       ok(compose(personal, ["up", "-d", "--no-build", "--force-recreate", "--no-deps", "relay"]), "yanlış anahtarla up");
       const rid = containerId(personal, "relay");
