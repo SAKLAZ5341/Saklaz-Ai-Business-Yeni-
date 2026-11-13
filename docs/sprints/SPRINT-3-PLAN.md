@@ -1,7 +1,7 @@
-# Sprint 3 — Planlama Raporu (onay bekliyor)
+# Sprint 3 — Planlama Raporu (onaylandı)
 
 > **Tarih:** 2026-11-12
-> **Durum:** ⏸ Proje sahibinin onayını bekliyor. Bu rapor için **hiçbir kod değiştirilmedi.**
+> **Durum:** ✅ Plan ve K1–K5 kararları proje sahibi tarafından onaylandı (2026-11-13). Uygulama aşama aşama, her aşama sonunda ayrı onayla ilerler.
 > **Kaynaklar:** Sprint 2 kaynak kodu ve testleri, `SECURITY.md` v0.3 (S1–S23), `docs/FAZ1-PLAN.md` §13 (13 haftalık plan), `docs/sprints/SPRINT-2-RAPOR.md` ve **yeni repodaki ilk gerçek GitHub CI çalışması**.
 > **Dil kuralı:** Bu belgedeki hiçbir güvenlik ifadesi mutlak değildir. Hepsi `SECURITY.md` §0'daki V1–V7 varsayımlarına bağlıdır.
 
@@ -340,14 +340,14 @@ Sprint 2'de protokol ve ajan düzeyinde testliydi. S3'te **gerçek relay üzerin
 ### 7.3 Relay
 - Gerçek sunucu kurulumu S5'tedir (kişisel VPS + şirket DMZ). S3'te yalnızca CI'daki Docker testi yapılır. Bu, gerçek bir sunucuda çalıştığı anlamına **gelmez**.
 
-## 8. Onayınızı Bekleyen Kararlar
+## 8. Kararlar (onaylandı: 2026-11-13)
 
-| # | Karar | Önerim |
+| # | Karar | Proje sahibinin kararı ve şartları |
 |---|---|---|
-| **K1** | 13 haftalık planın etkisi | **K1-A:** S3 sağlamlaştırma (3 hf) + S3b araçlar (2 hf) ≈ 16 hafta |
-| **K2** | DPAPI/TPM erişim yolu | **K2-A:** Kendi küçük N-API eklentimiz |
-| **K3** | TPM NV sayacı (yönetici yetkisi gerektirebilir) | S3'te yalnızca prototip ve ölçüm. Üretim kararı gerçek cihaz testinden sonra. |
-| **K4** | CD kapsamı | GHCR'ye imaj + SBOM + kaynak kanıtı. Sunucuya **otomatik dağıtım yok.** |
-| **K5** | `main` dal koruması | Açılması (sizin repo ayarlarınızdan) |
+| **K1** | Plan süresi | S3b ayrı sprint olarak planlanır. Toplam süre ≈ 16 hafta. |
+| **K2** | DPAPI/TPM erişim yolu | Minimal yerel eklenti. Gereksiz yetki kullanılmaz. Anahtarlar **hiçbir şekilde düz metin olarak diske yazılmaz.** TPM desteği gerçek cihazda doğrulanmadan TPM koruması varmış gibi raporlanmaz. |
+| **K3** | TPM NV sayacı | Bu sprintte yalnızca araştırılır ve gerçek cihazda ölçülür. **Yönetici izni gerektiren uygulama yapılmaz.** |
+| **K4** | CD kapsamı | Relay imajı GitHub Packages'a (GHCR) yayımlanır. **Otomatik sunucu dağıtımı kesinlikle yapılmaz.** |
+| **K5** | `main` dal koruması | Etkinleştirilir. Zorunlu CI kontrolleri başarılı olmadan birleştirme yapılmaz. Zorla push (force push) ve dal silme engellenir. |
 
-Onayınızla birlikte A0'dan başlarım. Her aşamadan sonra CI sonucunu kontrol eder, kırmızıysa bir sonrakine geçmem.
+**Çalışma kuralı:** Her aşama ayrı commit/PR ile sunulur. Aşama sonunda rapor verilir ve **yeni onay beklenir.** CI kırmızıysa sonraki aşamaya geçilmez.
