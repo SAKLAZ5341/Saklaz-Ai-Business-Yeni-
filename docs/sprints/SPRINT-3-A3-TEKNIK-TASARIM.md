@@ -1,9 +1,9 @@
 # Sprint 3 / A3 — Kasa v2 ve Windows DPAPI: Teknik Tasarım
 
-> **Tarih:** 2026-11-13
-> **Durum:** 📝 Tasarım. **Uygulamaya başlanmadı.** Proje sahibinin onayını bekliyor.
+> **Tarih:** 2026-11-14
+> **Durum:** Tasarım belgesi. A3'ün DPAPI/KEK ilk dilimi PR #12'de uygulanmıştır (açık, henüz main'e birleştirilmemiş); tam `vault.bin` v2 uygulaması tamamlanmış değildir.
 > **Esas:** `docs/sprints/SPRINT-3-PLAN.md` §2 A3; K2 ve K3 kararları (§8).
-> **Taban:** `main` = `0cd9bec`
+> **Güncel main tabanı:** `7a7742a513f577b1925044e7b3b143667cabb6a1`
 > **Dil kuralı:** Bu belgedeki güvenlik ifadeleri `SECURITY.md` §0 varsayımlarına bağlıdır; hiçbiri mutlak değildir.
 
 ## 0. Bağlayıcı kurallar
@@ -26,6 +26,14 @@
 - Uygulamalar: `MemoryVault` (testler) ve `InsecureFileVault`. İkincisi düz hex JSON yazar ve yalnızca `SAKLAZ_INSECURE_VAULT=1` iken açılır. **Üretim için kalıcı bir kasa henüz yok.** Sprint 2'de gerçek bir kullanıcı kurulumu olmadığı için korunması gereken üretim verisi de yok (§9).
 
 **Tasarım ilkesi:** `SecretVault` arayüzü **değişmez.** Yeni kasa, aynı arayüzün üçüncü bir uygulamasıdır. Çekirdek, veritabanı ve rollback kodunda değişiklik gerekmez; yalnızca kasayı oluşturan fabrika fonksiyonu eklenir.
+
+## 1.1 A3 uygulama durumu (2026-11-14)
+
+- PR #12 (`feat/a3-dpapi-keyprotector`, head `fa043bc`) main tabanı `7a7742a` üzerine açılmıştır; açık ve birleştirilmemiştir. PR kontrolleri 8/8 başarılıdır; Windows Server 2022 işinde gerçek DPAPI koruma/çözme ve ikinci kullanıcıyla ham blob izolasyonu gerçekten çalışmıştır.
+- PR #12'nin mevcut dilimi `@saklaz/win-keyprotect` N-API modülünü, `DpapiUserProtector` ve `ProtectedKeyStore` SKK1 biçimindeki `kek.bin` dosyasını içerir. Bu, tasarımın tam `vault.bin` v2 / `FileVaultV2` / üretim fabrikası / geçiş / atomik kasa yazımı kapsamının tamamlandığı anlamına gelmez.
+- **Açık güvenlik engelleri:** `tools/ci/dpapi-second-user.ps1` kullanıcı B'yi Administrators grubuna ekliyor ve `/rl highest` kullanıyor; parola `net user` ve `schtasks /rp` süreç argümanlarına veriliyor. Test yalnızca ham DPAPI blob'unu sınar; gerçek `ProtectedKeyStore` dosyasını açmaz. `wrapNative().unprotect()` sonucu yeni `Uint8Array`'e kopyalanırken orijinal Node Buffer sıfırlanmıyor.
+- PR #13 (`feat/mvp-alpha`) Draft durumundadır ve PR #12'ye bağımlıdır; A3 güvenlik kabulü yerine geçmez.
+- Bu belge tasarım hedeflerini korur. PR #12'nin ilk dilimi, tam kasa v2'nin tamamlandığı veya A3 kabul testlerinin geçtiği şeklinde raporlanmamalıdır.
 
 ## 2. Mimari
 
@@ -199,6 +207,8 @@ Her `set()` çağrısında:
 **Çökme garantisi:** `vault.bin` her an ya eski ya yeni geçerli haldedir. Açılışta artık `.tmp-*` dosyaları bulunursa silinir; içerikleri hiç kullanılmaz.
 
 **Eşzamanlılık:** Kasa tek bir süreç tarafından açılır. Açılışta `vault.lock` dosyası `wx` ile oluşturulur ve süreç boyunca açık tutulur; Windows'ta paylaşım kipi nedeniyle ikinci süreç onu açamaz. İkinci bir ajan süreci `VAULT_LOCKED` alır.
+
+**Açık kurtarma kararı:** Süreç çöktüğünde Windows açık tanıtıcıyı kapatır, ancak diskteki `vault.lock` dosya girdisi kendiliğinden silinmez. Yalnızca PID/yaş bilgisine bakarak kilidi silmek güvenli değildir (PID yeniden kullanımı ve canlı süreç yarışı). Kilit edinme ve stale-lock kurtarma protokolü tanımlanıp ayrı test edilmeden çökme sonrası otomatik kurtarma iddia edilmemelidir; test planına T-A3-37 eklenmiştir.
 
 **Başarım:** `state-epoch` her mesajda yazılır. Yazım ≈ 1 KB AEAD + fsync + rename demektir; Windows'ta bunun 2–20 ms olması bekleniyor. Bu **ölçülecek** (test planı T-A3-30). 20 ms'yi aşarsa, kalıcı yazım gerçekleşmeden onay gönderilmemesi koşuluyla toplu yazım tasarlanacak; garanti zayıflatılmayacak.
 
