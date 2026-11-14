@@ -235,8 +235,8 @@ Her `set()` çağrısında:
 |---|---|---|
 | Kasa yok, ilk açılış | Yeni KEK ve `vault.bin` oluşturulur | — |
 | Yerel modül yok veya Windows değil | `UNSUPPORTED_PLATFORM`; ajan başlamaz. **Güvensiz kasaya geri düşmez.** | Doğru kurulum |
-| DPAPI `unwrap` başarısız: başka kullanıcı, yönetici parola sıfırlaması, bozuk profil | `UNWRAP_FAILED`; ajan başlamaz; dosyaya dokunulmaz | Aşağıdaki not |
-| `machineGuid` veya `userSid` uyuşmuyor | `BINDING_MISMATCH` | Yeniden eşleştirme |
+| DPAPI `unwrap` başarısız: yönetici parola sıfırlaması, bozuk profil (başka kullanıcı için bkz. sonraki satır) | `UNWRAP_FAILED`; ajan başlamaz; dosyaya dokunulmaz | Aşağıdaki not |
+| `machineGuid` veya `userSid` uyuşmuyor (aynı bilgisayarda başka kullanıcı dahil; bağlama denetimi DPAPI'den önce yapılır) | `BINDING_MISMATCH` | Yeniden eşleştirme |
 | Bozuk dosya: magic, sürüm, uzunluk, etiket | `VAULT_FORMAT` / `VAULT_VERSION` / `VAULT_CORRUPT`; ajan başlamaz; dosya **değiştirilmez ve silinmez** (inceleme için) | Yedekten veya yeniden eşleştirme |
 | Bilinmeyen koruyucu türü | `PROTECTOR_MISMATCH` | — |
 | Yazım başarısız (disk dolu, kilit) | `WRITE_FAILED`; bellekteki durum ve dosya eski halinde; mesaj onaylanmaz | Kendiliğinden yeniden deneme (relay yeniden teslim eder) |

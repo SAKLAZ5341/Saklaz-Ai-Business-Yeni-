@@ -23,7 +23,7 @@ Bu bölüm, aşağıdaki 2026-11-13 tarihli tarihsel incelemedeki durum tablolar
 
 **K5 koruması:** Ruleset `27197647` aktif; strict required checks açık, yedi zorunlu kontrol, yalnızca merge yöntemi, bypass aktörü yok. CodeQL güvenlik eşiği medium-or-higher, alert eşiği errors. Kural/ayar gevşetilmedi.
 
-**PR #11 durumu:** Bu doküman PR'ı (`docs/s3-a3-plan`) main'in 8 commit gerisinde ve 1 commit ilerideydi (`main` SHA yukarıda, ortak taban `0cd9bec`). Strict ruleset nedeniyle bu belge commit'leri dalı güncel main'e eşitlemez; PR, main tabanına göre yeniden doğrulanmadan birleştirilemez.
+**PR #11 durumu (2026-11-14):** Bu doküman PR'ı (`docs/s3-a3-plan`) main'in 8 commit gerisinde ve bu düzeltmeden önce 4 commit ilerideydi (`main` = `7a7742a`, ortak taban `0cd9bec`); bu commit ile 5 commit ileridedir. Sayılar main ilerledikçe değişir; güncel değer PR sayfasındadır. Strict ruleset nedeniyle bu belge commit'leri dalı güncel main'e eşitlemez; PR, main tabanına göre yeniden doğrulanmadan birleştirilemez.
 
 **Aşağıdaki bölümler tarihsel analizdir:** PR #1/#3/#4'ün merge öncesi durumu ve PR #10 için öneri, 2026-11-13 anlık görüntüsünü açıklar; artık yapılacak iş olarak okunmamalıdır.
 

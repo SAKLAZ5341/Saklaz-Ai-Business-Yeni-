@@ -136,7 +136,7 @@ Proje sahibi veya BT tarafından, `tools/devtest/windows/` test kitiyle yapılı
 | W3.1 | Kurulum: yönetici **olmayan** bir kullanıcı | EDR veya SmartScreen uyarısı oldu mu? İmzasız yerel modül engellendi mi? |
 | W3.2 | Kasa oluşturma, ajanı kapatma, **bilgisayarı yeniden başlatma**, kasayı açma | Geçti/kaldı |
 | W3.3 | Kullanıcının **kendi parolasını değiştirmesi** → kasayı açma | Açılmalı |
-| W3.4 | Aynı bilgisayarda **başka bir kullanıcı** hesabıyla açma denemesi | `UNWRAP_FAILED` |
+| W3.4 | Aynı bilgisayarda **başka bir kullanıcı** hesabıyla açma denemesi | Gerçek `ProtectedKeyStore` dosyası (`kek.bin`): `BINDING_MISMATCH` (SID bağlama denetimi DPAPI çağrısından önce yapılır). Ham DPAPI blob'u: `UNPROTECT_FAILED`. |
 | W3.5 | Kasa dosyasını **başka bir bilgisayara** kopyalayıp açma denemesi; mümkünse aynı etki alanı kullanıcısıyla, dolaşan profilde | `UNWRAP_FAILED` veya `BINDING_MISMATCH` |
 | W3.6 | (Yalnızca bu amaçla açılmış bir **test hesabında**) yönetici parola sıfırlaması → açma denemesi | Yerel hesapta beklenen: açılmaz. Sonuç belgeye işlenir. |
 | W3.7 | Antivirüs veya EDR açıkken 10.000 yazım | Hata sayısı, p95 süresi |
