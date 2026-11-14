@@ -152,6 +152,7 @@ try {
 finally {
   $pw = $null
   $problems = @()
+  $profileLeft = $false
   if (Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue) {
     Stop-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue
     for ($i = 0; $i -lt 15 -and (Get-ScheduledTask -TaskName $task).State -eq 'Running'; $i++) { Start-Sleep -Seconds 1 }
@@ -172,7 +173,16 @@ finally {
     for ($i = 0; $i -lt 45 -and -not $removed; $i++) {
       $prof = Get-CimInstance Win32_UserProfile | Where-Object { $_.SID -eq $sidB }
       if (-not $prof) { $removed = $true; break }
-      if ($prof.Loaded) { $lastErr = 'profil hâlâ yüklü'; Start-Sleep -Seconds 2; continue }
+      if ($prof.Loaded) {
+        # Süreç kalmadığı hâlde kovan açık kalabiliyor; açık tanıtıcı yoksa yönetici olarak boşaltılabilir.
+        if ($i -ge 5) {
+          foreach ($hive in @("HKU\$sidB`_Classes", "HKU\$sidB")) { & reg.exe unload $hive 2>$null | Out-Null }
+          $global:LASTEXITCODE = 0
+        }
+        $lastErr = 'profil hâlâ yüklü'
+        Start-Sleep -Seconds 2
+        continue
+      }
       try { $prof | Remove-CimInstance -ErrorAction Stop } catch { $lastErr = $_.Exception.Message; Start-Sleep -Seconds 2 }
     }
     if (-not $removed) {
@@ -181,7 +191,14 @@ finally {
         Write-Host ("Profil kaldırılamadı: Loaded={0}; son hata: {1}" -f $prof.Loaded, $lastErr)
         $still = Get-Process -IncludeUserName -ErrorAction SilentlyContinue | Where-Object { $_.UserName -and $_.UserName.EndsWith("\$user") }
         Write-Host ("B adına süreç: " + $(if ($still) { ($still | ForEach-Object { "$($_.ProcessName)($($_.Id))" }) -join ', ' } else { 'yok' }))
-        $problems += 'kullanıcı profili'
+        if ($prof.Loaded -and -not $still) {
+          # Windows hizmeti kovanı açık tutuyor; profil yalnızca yeniden başlatmada boşalır. Geçici CI sanal
+          # makinesi iş sonunda yok edilir. Hesap silindiği için bu profille oturum açılamaz. Açıkça raporlanır.
+          Write-Warning "KALAN: geçici kullanıcının profili Windows tarafından yüklü tutuldu ve silinemedi ($($prof.LocalPath)); hesap silindi, VM iş sonunda yok edilir."
+          $profileLeft = $true
+        } else {
+          $problems += 'kullanıcı profili'
+        }
       }
     }
   }
@@ -194,5 +211,9 @@ finally {
   Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
   if (Test-Path $work) { $problems += 'çalışma klasörü' }
   if ($problems.Count -gt 0) { throw ("Temizlik tamamlanamadı: " + ($problems -join ', ')) }
-  Write-Host 'Temizlik doğrulandı: görev, toplu iş hakkı, kullanıcı profili, geçici kullanıcı ve dosyalar kaldırıldı'
+  if ($profileLeft) {
+    Write-Host 'Temizlik doğrulandı: görev, toplu iş hakkı, geçici kullanıcı ve dosyalar kaldırıldı; kullanıcı profili YÜKLÜ KALDI (yukarıdaki uyarı)'
+  } else {
+    Write-Host 'Temizlik doğrulandı: görev, toplu iş hakkı, kullanıcı profili, geçici kullanıcı ve dosyalar kaldırıldı'
+  }
 }
