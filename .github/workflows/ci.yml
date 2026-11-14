@@ -123,6 +123,16 @@ jobs:
         with:
           flutter-version: 3.27.4
           channel: stable
+      - name: Android NDK 27.0.12077973 (sabit sürüm; yoksa kurulur)
+        run: |
+          NDK_DIR="$ANDROID_HOME/ndk/27.0.12077973"
+          if [ ! -f "$NDK_DIR/source.properties" ]; then
+            set +o pipefail
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973" > /dev/null
+            set -o pipefail
+          fi
+          grep -q 'Pkg.Revision = 27.0.12077973' "$NDK_DIR/source.properties"
+          echo "NDK hazır: $(grep Pkg.Revision "$NDK_DIR/source.properties")"
       - name: Android projesi, analiz ve ağ politikası testleri
         working-directory: apps/mobile/app
         run: |
@@ -138,6 +148,7 @@ jobs:
           AAPT2="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/aapt2"
           cleartext() { "$AAPT2" dump xmltree "$1" --file AndroidManifest.xml | grep -A0 'usesCleartextTraffic' | sed -E 's/.*=//'; }
           python3 tool/prepare_android.py .
+          grep -q 'ndkVersion.*27.0.12077973' android/app/build.gradle* && echo "ndkVersion sabit: 27.0.12077973"
           flutter build apk --release
           cp build/app/outputs/flutter-apk/app-release.apk "$RUNNER_TEMP/saklaz-ai-0.1.0-alpha.apk"
           v="$(cleartext "$RUNNER_TEMP/saklaz-ai-0.1.0-alpha.apk")"; echo "üretim usesCleartextTraffic=$v"; [ "$v" = "false" ]

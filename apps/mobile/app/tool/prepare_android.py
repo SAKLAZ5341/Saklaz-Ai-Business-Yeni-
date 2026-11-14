@@ -63,3 +63,25 @@ for name in ("settings.gradle", "settings.gradle.kts"):
 w = root / "android/gradle/wrapper/gradle-wrapper.properties"
 w.write_text(re.sub(r"gradle-[0-9.]+-(all|bin)\.zip", f"gradle-{GRADLE}-all.zip", w.read_text(encoding="utf-8")), encoding="utf-8")
 print(f"Gradle {GRADLE}")
+
+# Android NDK sürümü sabitlenir (Flutter eklentileri farklı NDK isteyebilir; derleme tekrarlanabilir olsun).
+# CI bu sürümü sdkmanager ile açıkça kurar (.github/workflows/ci.yml).
+NDK = "27.0.12077973"
+done = False
+for name in ("build.gradle", "build.gradle.kts"):
+    f = root / "android/app" / name
+    if not f.exists():
+        continue
+    t = f.read_text(encoding="utf-8")
+    kts = name.endswith(".kts")
+    line = f'ndkVersion = "{NDK}"' if kts else f'ndkVersion "{NDK}"'
+    t2, n = re.subn(r'ndkVersion\s*=?\s*(flutter\.ndkVersion|"[^"]*")', line, t)
+    if n == 0:
+        t2, n = re.subn(r"(android\s*\{)", rf"\1\n    {line}", t, count=1)
+    if n == 0:
+        raise SystemExit(f"{name}: ndkVersion yerleştirilemedi")
+    f.write_text(t2, encoding="utf-8")
+    done = True
+    print(f"{name}: NDK {NDK}")
+if not done:
+    raise SystemExit("android/app/build.gradle(.kts) bulunamadı")
