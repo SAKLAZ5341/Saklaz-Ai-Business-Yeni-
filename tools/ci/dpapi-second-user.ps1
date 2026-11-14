@@ -162,12 +162,20 @@ finally {
   if ($sidB) {
     # Profil, kullanıcı silinmeden ÖNCE kaldırılır; oturum kapanışı birkaç saniye sürebildiği için yeniden denenir.
     $removed = $false
-    for ($i = 0; $i -lt 20 -and -not $removed; $i++) {
+    $lastErr = ''
+    for ($i = 0; $i -lt 45 -and -not $removed; $i++) {
       $prof = Get-CimInstance Win32_UserProfile | Where-Object { $_.SID -eq $sidB }
       if (-not $prof) { $removed = $true; break }
-      try { $prof | Remove-CimInstance -ErrorAction Stop } catch { Start-Sleep -Seconds 2 }
+      if ($prof.Loaded) { $lastErr = 'profil hâlâ yüklü'; Start-Sleep -Seconds 2; continue }
+      try { $prof | Remove-CimInstance -ErrorAction Stop } catch { $lastErr = $_.Exception.Message; Start-Sleep -Seconds 2 }
     }
-    if (-not $removed -and (Get-CimInstance Win32_UserProfile | Where-Object { $_.SID -eq $sidB })) { $problems += 'kullanıcı profili' }
+    if (-not $removed) {
+      $prof = Get-CimInstance Win32_UserProfile | Where-Object { $_.SID -eq $sidB }
+      if ($prof) {
+        Write-Host ("Profil kaldırılamadı: Loaded={0}; son hata: {1}" -f $prof.Loaded, $lastErr)
+        $problems += 'kullanıcı profili'
+      }
+    }
   }
   if ($created) {
     try { $computer.Delete('User', $user) } catch { }
