@@ -1,0 +1,21 @@
+SAKLAZ AI — Windows ajanı 0.1.0-alpha (TEST SÜRÜMÜ)
+
+Kurulum (bu klasörü örn. C:\SAKLAZ\saklaz-agent altına çıkarın; yolda boşluk olmaması önerilir):
+  1. saklaz-agent.cmd setup --profile personal
+       relay adresi, bu bilgisayarın adı, hesap e-postası, parola ve doğrulama kodu sorulur
+  2. saklaz-agent.cmd pair --profile personal
+       ekranda QR ve kod çıkar; telefonda Cihazlar → Bilgisayar ekle; iki ekrandaki 6 haneli
+       güvenlik kodu aynıysa burada "e" ile onaylayın
+  3. powershell -ExecutionPolicy Bypass -File install-startup.ps1 -AgentProfile personal
+       Windows oturum açılışında arka planda çalışır
+
+Diğer:
+  saklaz-agent.cmd status   --profile personal   durum
+  saklaz-agent.cmd lockdown --profile personal   acil kilit (bütün komutlar reddedilir)
+  saklaz-agent.cmd selftest                      ağsız öz-sınama (DPAPI, şifreli kasa, veritabanı)
+  powershell -ExecutionPolicy Bypass -File uninstall-startup.ps1 -AgentProfile personal
+
+Kurumsal alan için aynı adımları --profile business ile, kurumsal relay adresiyle yapın.
+Veriler: %LOCALAPPDATA%\SAKLAZ\agent-<profil>  (DPAPI ile bu Windows kullanıcısına bağlı)
+Günlük:  %LOCALAPPDATA%\SAKLAZ\agent-<profil>\logs\agent.log  (gizli değer yazılmaz)
+Bu sürümde yalnızca salt okunur izinli komutlar vardır: sistem, disk, ağ, işlemler, çalışma süresi, ping.

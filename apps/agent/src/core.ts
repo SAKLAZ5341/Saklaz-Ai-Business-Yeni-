@@ -60,6 +60,11 @@ export interface AgentOptions {
   /** Acil kilit devreye girdiğinde bağlantı katmanının bağlantıyı kesmesi için. */
   onLockdown?: () => void;
   label?: string;
+  /**
+   * Doğrulanmış ve kabul edilmiş bir komut için çağrılır (MVP alfa). Çalıştırma ve sonuç olayları
+   * çağıranın sorumluluğundadır; çekirdek yalnızca "received" olayını üretir.
+   */
+  onCommand?: (from: string, body: Body<"cmd.create">) => void;
 }
 
 export interface IncomingFrame {
@@ -369,6 +374,7 @@ export class AgentCore {
         res.out.push(...this.sendTo(from, "ack", { ackOf: msg.hdr.msgId, status: "accepted", code: "OK" }));
         const b = msg.body as Body<"cmd.create">;
         res.out.push(...this.sendTo(from, "task.event", { taskId: b.taskId, seq: 0, status: "received" }));
+        this.o.onCommand?.(from, b);
         return;
       }
       default:

@@ -1,0 +1,18 @@
+{
+  "name": "@saklaz/client-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SAKLAZ AI istemci çekirdeği (MVP alfa): telefon istemcisi — kalıcı cihaz kimliği, cihaz listesi, eşleştirme, imzalı/şifreli mesajlar, relay bağlantısı ve hesap API'si (telefon ve ajan ortak kullanır). Platformdan bağımsızdır (tarayıcı/WebView ve Node).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@saklaz/crypto": "workspace:*",
+    "@saklaz/protocol": "workspace:*"
+  }
+}

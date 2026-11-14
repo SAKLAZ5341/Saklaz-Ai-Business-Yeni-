@@ -1,0 +1,4 @@
+# Gitleaks yanlış pozitifleri (yalnızca gerçek sır OLMADIĞI doğrulanmış bulgular; parmak izi = commit:dosya:kural:satır).
+# d259187: birim testinde sahte relay yanıtı ("RT-0123456789" — rastgele değil, sınama yer tutucusu). Sonraki
+# commit'te değer açıkça sahte bir metinle değiştirildi; geçmişteki commit yeniden yazılmadığı için burada listelenir.
+d25918736fb6e3cea01335b1b571836a24c8552b:apps/agent/test/mvp-app.test.ts:generic-api-key:150
