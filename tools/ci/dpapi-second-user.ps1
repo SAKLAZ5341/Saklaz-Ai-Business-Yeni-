@@ -161,6 +161,12 @@ finally {
   if ($batchGranted -and $sidB) { try { [SaklazLsa]::Revoke($sidB, 'SeBatchLogonRight') } catch { $problems += 'toplu iş hakkı' } }
   if ($sidB) {
     # Profil, kullanıcı silinmeden ÖNCE kaldırılır; oturum kapanışı birkaç saniye sürebildiği için yeniden denenir.
+    # B adına kalan süreçler (görev bitti ama alt süreç/konsol kalmış olabilir) sonlandırılır.
+    $bProcs = Get-Process -IncludeUserName -ErrorAction SilentlyContinue | Where-Object { $_.UserName -and $_.UserName.EndsWith("\$user") }
+    if ($bProcs) {
+      Write-Host ("B adına kalan süreçler: " + (($bProcs | ForEach-Object { "$($_.ProcessName)($($_.Id))" }) -join ', '))
+      $bProcs | Stop-Process -Force -ErrorAction SilentlyContinue
+    }
     $removed = $false
     $lastErr = ''
     for ($i = 0; $i -lt 45 -and -not $removed; $i++) {
@@ -173,6 +179,8 @@ finally {
       $prof = Get-CimInstance Win32_UserProfile | Where-Object { $_.SID -eq $sidB }
       if ($prof) {
         Write-Host ("Profil kaldırılamadı: Loaded={0}; son hata: {1}" -f $prof.Loaded, $lastErr)
+        $still = Get-Process -IncludeUserName -ErrorAction SilentlyContinue | Where-Object { $_.UserName -and $_.UserName.EndsWith("\$user") }
+        Write-Host ("B adına süreç: " + $(if ($still) { ($still | ForEach-Object { "$($_.ProcessName)($($_.Id))" }) -join ', ' } else { 'yok' }))
         $problems += 'kullanıcı profili'
       }
     }
