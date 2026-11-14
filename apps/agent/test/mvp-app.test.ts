@@ -42,7 +42,8 @@ describe("EncryptedFileVault", () => {
   it("şifreli gidiş-dönüş; dosyada düz metin yok; yanlış anahtar / profil / bozulma → VAULT_CORRUPT", () => {
     const p = join(tmp(), "v", "vault.bin");
     const kek = randomBytes(32);
-    const v = new EncryptedFileVault(p, kek, "personal");
+    const k = () => Uint8Array.from(kek); // kasa KEK tamponunu kapanışta/hatada sıfırlar; her açılışa kopya
+    const v = new EncryptedFileVault(p, k(), "personal");
     expect(v.kind).toBe("dpapi");
     expect(v.get("x")).toBeUndefined();
     v.set("relay-refresh", new TextEncoder().encode("GIZLI-YENILEME-TOKENI"));
@@ -52,17 +53,19 @@ describe("EncryptedFileVault", () => {
     const file = readFileSync(p);
     expect(file.subarray(0, 4).toString()).toBe("SKV1");
     expect(file.includes(Buffer.from("GIZLI"))).toBe(false);
-    const again = new EncryptedFileVault(p, kek, "personal");
+    v.close();
+    const again = new EncryptedFileVault(p, k(), "personal");
     expect(new TextDecoder().decode(again.get("relay-refresh"))).toBe("GIZLI-YENILEME-TOKENI");
     expect(again.get("b")).toBeUndefined();
+    again.close();
     expect(() => new EncryptedFileVault(p, randomBytes(32), "personal")).toThrow(VaultError);
-    expect(() => new EncryptedFileVault(p, kek, "business")).toThrow("VAULT_CORRUPT"); // profil izolasyonu
+    expect(() => new EncryptedFileVault(p, k(), "business")).toThrow("VAULT_CORRUPT"); // profil izolasyonu
     const t = Buffer.from(file);
     t[t.length - 1] = (t[t.length - 1] ?? 0) ^ 1;
     writeFileSync(p, t);
-    expect(() => new EncryptedFileVault(p, kek, "personal")).toThrow("VAULT_CORRUPT");
+    expect(() => new EncryptedFileVault(p, k(), "personal")).toThrow("VAULT_CORRUPT");
     writeFileSync(p, Buffer.from("SKV1"));
-    expect(() => new EncryptedFileVault(p, kek, "personal")).toThrow("VAULT_CORRUPT");
+    expect(() => new EncryptedFileVault(p, k(), "personal")).toThrow("VAULT_CORRUPT");
     expect(() => new EncryptedFileVault(p, randomBytes(16), "personal")).toThrow("VAULT_KEY");
   });
 
@@ -73,11 +76,13 @@ describe("EncryptedFileVault", () => {
       expect(() => openVault(d, "personal")).toThrow(/SAKLAZ_INSECURE_VAULT/);
       vi.unstubAllEnvs();
     }
-    const { vault, wipe } = openVault(d, "personal", new FakeProtector());
+    const { vault, close } = openVault(d, "personal", new FakeProtector());
     vault.set("k", Uint8Array.of(9));
-    wipe();
+    close();
     expect(existsSync(join(d, "kek.bin"))).toBe(true);
-    expect(openVault(d, "personal", new FakeProtector()).vault.get("k")).toEqual(Uint8Array.of(9));
+    const again = openVault(d, "personal", new FakeProtector());
+    expect(again.vault.get("k")).toEqual(Uint8Array.of(9));
+    again.close();
   });
 });
 

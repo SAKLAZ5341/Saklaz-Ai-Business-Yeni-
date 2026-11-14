@@ -59,13 +59,25 @@ export function validateRelayUrl(url: string, allowInsecure: boolean): string {
  * Kasa: Windows'ta DPAPI (kullanıcı kapsamı) ile korunan KEK + şifreli dosya. Diğer platformlarda
  * yalnızca geliştirme/test için SAKLAZ_INSECURE_VAULT=1 ile güvensiz dosya kasası (açıkça belirtilir).
  */
-export function openVault(dir: string, profile: Profile, protector?: KeyProtector): { vault: SecretVault; wipe: () => void } {
+export interface OpenedVault {
+  vault: SecretVault;
+  /** Kasa kilidini bırakır ve KEK'i sıfırlar. */
+  close: () => void;
+}
+
+export function openVault(dir: string, profile: Profile, protector?: KeyProtector): OpenedVault {
   let p = protector;
   if (!p && process.platform === "win32") p = new DpapiUserProtector();
-  if (!p) return { vault: new InsecureFileVault(join(dir, "vault.insecure.json")), wipe: () => undefined };
+  if (!p) return { vault: new InsecureFileVault(join(dir, "vault.insecure.json")), close: () => undefined };
   const { kek } = ProtectedKeyStore.openOrCreate(join(dir, "kek.bin"), p);
-  const vault = new EncryptedFileVault(join(dir, "vault.bin"), kek, profile);
-  return { vault, wipe: () => kek.fill(0) };
+  let vault: EncryptedFileVault;
+  try {
+    vault = new EncryptedFileVault(join(dir, "vault.bin"), kek, profile);
+  } catch (e) {
+    kek.fill(0); // kasa açılamadı (bozuk, kilitli, yazılamıyor): KEK bellekte kalmaz
+    throw e;
+  }
+  return { vault, close: () => vault.close() };
 }
 
 const REFRESH = "relay-refresh";
@@ -84,7 +96,7 @@ export class AgentService {
   readonly dir: string;
   readonly core: AgentCore;
   private readonly vault: SecretVault;
-  private readonly wipeKek: () => void;
+  private readonly closeVault: () => void;
   private client: RelayClient | undefined;
   private tokens: TokenManager | undefined;
   private cfg: ProfileConfig | undefined;
@@ -95,10 +107,20 @@ export class AgentService {
     mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     const v = openVault(this.dir, o.profile, o.protector);
     this.vault = v.vault;
-    this.wipeKek = v.wipe;
-    const cfgPath = join(this.dir, "config.json");
-    if (existsSync(cfgPath)) this.cfg = JSON.parse(readFileSync(cfgPath, "utf8")) as ProfileConfig;
-    this.core = new AgentCore({
+    this.closeVault = v.close;
+    try {
+      const cfgPath = join(this.dir, "config.json");
+      if (existsSync(cfgPath)) this.cfg = JSON.parse(readFileSync(cfgPath, "utf8")) as ProfileConfig;
+      this.core = this.createCore(o);
+    } catch (e) {
+      v.close(); // çekirdek açılamazsa kasa kilidi bırakılır, KEK sıfırlanır
+      throw e;
+    }
+    this.o.log("info", "agent.open", { profile: o.profile, vault: this.vault.kind, deviceId: this.core.deviceId, paired: !!this.core.workspaceId });
+  }
+
+  private createCore(o: ServiceOptions): AgentCore {
+    return new AgentCore({
       dbPath: join(this.dir, "agent.db"),
       vault: this.vault,
       label: this.cfg?.label ?? "Bilgisayar",
@@ -115,7 +137,27 @@ export class AgentService {
         });
       },
     });
-    this.o.log("info", "agent.open", { profile: o.profile, vault: this.vault.kind, deviceId: this.core.deviceId, paired: !!this.core.workspaceId });
+  }
+
+  /** Gizli metni kasaya yazar; geçici bayt kopyası her durumda sıfırlanır. */
+  private putSecret(name: string, text: string): void {
+    const b = new TextEncoder().encode(text);
+    try {
+      this.vault.set(name, b);
+    } finally {
+      b.fill(0);
+    }
+  }
+
+  /** Gizli metni kasadan okur; kasanın döndürdüğü bayt kopyası her durumda sıfırlanır. */
+  private readSecret(name: string): string | undefined {
+    const b = this.vault.get(name);
+    if (!b) return undefined;
+    try {
+      return new TextDecoder().decode(b);
+    } finally {
+      b.fill(0);
+    }
   }
 
   get config(): ProfileConfig | undefined {
@@ -123,7 +165,7 @@ export class AgentService {
   }
 
   get isLoggedIn(): boolean {
-    return !!this.vault.get(REFRESH);
+    return this.readSecret(REFRESH) !== undefined;
   }
 
   get isReady(): boolean {
@@ -153,8 +195,8 @@ export class AgentService {
     const api = this.api();
     const r = await api.login(email, password, code);
     await api.registerDevice(r.accessToken, r.accountId, this.core.deviceId, "computer", this.core.sign);
-    this.vault.set(REFRESH, new TextEncoder().encode(r.refreshToken));
-    this.vault.set(ACCOUNT, new TextEncoder().encode(r.accountId));
+    this.putSecret(REFRESH, r.refreshToken);
+    this.putSecret(ACCOUNT, r.accountId);
     this.tokens = this.newTokens(r.refreshToken);
     this.tokens.setAccess(r.accessToken);
     this.o.log("info", "relay.login", { deviceId: this.core.deviceId });
@@ -162,16 +204,16 @@ export class AgentService {
 
   private newTokens(refresh: string): TokenManager {
     return new TokenManager(this.api(), refresh, (t) => {
-      this.vault.set(REFRESH, new TextEncoder().encode(t));
+      this.putSecret(REFRESH, t);
     });
   }
 
   /** Relay'e bağlanır; gelen çerçeveler çekirdekte doğrulanır, yanıtlar gönderilir. */
   connect(): RelayClient {
     if (!this.cfg) throw new Error("NOT_CONFIGURED");
-    const refresh = this.vault.get(REFRESH);
-    if (!refresh) throw new Error("NOT_LOGGED_IN");
-    this.tokens ??= this.newTokens(new TextDecoder().decode(refresh));
+    const refresh = this.readSecret(REFRESH);
+    if (refresh === undefined) throw new Error("NOT_LOGGED_IN");
+    this.tokens ??= this.newTokens(refresh);
     const tokens = this.tokens;
     const client = new RelayClient({
       url: connectUrl(this.cfg.relayUrl),
@@ -253,7 +295,10 @@ export class AgentService {
 
   close(): void {
     this.client?.stop();
-    this.core.close();
-    this.wipeKek();
+    try {
+      this.core.close();
+    } finally {
+      this.closeVault();
+    }
   }
 }

@@ -11,13 +11,14 @@
  * Parola ve TOTP kodu yalnızca bellekte tutulur; diske ve günlüğe yazılmaz.
  */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { initCrypto } from "@saklaz/crypto";
 import QRCode from "qrcode";
 import { allowedCommandNames } from "./commands.js";
+import { runPairing, withBackgroundTaskPaused, type PairingIo } from "./pairing.js";
 import { createFileLogger, type Logger } from "./logger.js";
 import { AgentService, isProfile, profileDir, type Profile } from "./service.js";
 
@@ -94,38 +95,25 @@ async function setup(profile: Profile, log: Logger): Promise<number> {
 }
 
 async function pair(profile: Profile, log: Logger): Promise<number> {
-  const wasRunning = stopBackgroundTask(profile);
-  const svc = await openService(profile, log);
-  try {
-    if (!svc.config || !svc.isLoggedIn) {
-      console.error(`Önce kurulum yapın: saklaz-agent setup --profile ${profile}`);
-      return 1;
+  const io: PairingIo = {
+    print: (t) => {
+      console.log(t);
+    },
+    error: (t) => {
+      console.error(t);
+    },
+    ask: (q) => ask(q),
+    terminalQr: (code) => QRCode.toString(code, { type: "terminal", small: true, errorCorrectionLevel: "M" }),
+    svgQr: (code) => QRCode.toString(code, { type: "svg", margin: 2, width: 360 }),
+  };
+  return withBackgroundTaskPaused({ stop: () => stopBackgroundTask(profile), start: () => startBackgroundTask(profile) }, async () => {
+    const svc = await openService(profile, log);
+    try {
+      return await runPairing(svc, io, profile);
+    } finally {
+      svc.close();
     }
-    const client = svc.connect();
-    await client.waitReady(20_000);
-    const code = svc.startPairing();
-    console.log("\nTelefonda SAKLAZ → Bilgisayarlar → Bilgisayar ekle → QR kodu okutun:\n");
-    console.log(await QRCode.toString(code, { type: "terminal", small: true, errorCorrectionLevel: "M" }));
-    const svgPath = join(svc.dir, "pairing-qr.svg");
-    writeFileSync(svgPath, await QRCode.toString(code, { type: "svg", margin: 2, width: 360 }), { mode: 0o600 });
-    console.log(`QR terminalde okunmuyorsa: ${svgPath}`);
-    console.log(`veya telefona elle girin:\n${code}\n`);
-    console.log("Kod 5 dakika geçerlidir. Telefon bekleniyor…");
-    const sas = await svc.waitForSas();
-    console.log(`\nGÜVENLİK KODU (SAS):  ${sas}\n`);
-    const ok = (await ask("Telefonda görünen kod bununla AYNI mı? (e/h): ")).toLowerCase().startsWith("e");
-    rmSync(svgPath, { force: true });
-    if (!svc.confirmPairing(ok)) {
-      console.error("Eşleştirme iptal edildi.");
-      return 1;
-    }
-    await svc.waitLinked(120_000);
-    console.log("Eşleştirme tamamlandı. Telefon bu bilgisayarın sahibi olarak bağlandı.");
-    return 0;
-  } finally {
-    svc.close();
-    if (wasRunning) startBackgroundTask(profile);
-  }
+  });
 }
 
 async function run(profile: Profile, log: Logger): Promise<number> {
@@ -237,7 +225,8 @@ export async function main(argv: string[]): Promise<number> {
   } catch (e) {
     const code = e instanceof Error && /^[A-Z_]{2,64}$/.test(e.message) ? e.message : e instanceof Error && "code" in e ? String((e as { code: unknown }).code) : "ERROR";
     log("error", "cli.failed", { cmd, code });
-    console.error(`Hata: ${code}`);
+    if (code === "VAULT_LOCKED") console.error("Bu profilin kasası başka bir süreçte açık (ör. arka plan ajanı). Önce onu durdurun.");
+    else console.error(`Hata: ${code}`);
     return 1;
   }
 }

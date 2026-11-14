@@ -12,3 +12,5 @@ export { ProtectedKeyStore, bindingHash, defaultKeyPath, KEK_BYTES } from "./key
 export { AgentService, openVault, profileDir, validateRelayUrl, isProfile, PROFILES, type Profile, type ProfileConfig, type ServiceOptions } from "./app/service.js";
 export { EncryptedFileVault, VaultError } from "./app/filevault.js";
 export { runCommand, helpText, allowedCommandNames, type CommandResult } from "./app/commands.js";
+export { VaultLock, LOCK_UNREADABLE_STALE_MS, type VaultErrorCode } from "./app/filevault.js";
+export { runPairing, withBackgroundTaskPaused, PAIRING_QR_FILE, type PairingIo, type PairingService, type BackgroundTask } from "./app/pairing.js";
