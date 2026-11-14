@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { AiError, aiErrorText, chat, defaultAiSettings, extractResponsesText, MODES } from "../src/ai.js";
 import { hostFetch, Store, validateRelay } from "../src/app.js";
-import type { Host, HttpResponse } from "../src/host.js";
+import type { Host, HttpContext, HttpResponse } from "../src/host.js";
+import { isForbiddenHost, isPrivateHost, validateLocalAiUrl } from "../src/netpolicy.js";
 
 class MemHost implements Host {
   readonly kind = "android" as const;
   readonly m = new Map<string, string>();
-  calls: { url: string; method: string; headers: Record<string, string>; body?: string }[] = [];
+  calls: { url: string; method: string; headers: Record<string, string>; body?: string; ctx: HttpContext }[] = [];
   next: HttpResponse | Error = { status: 200, body: "{}" };
+  lanTest = false;
+  cleared = 0;
   get(k: string) {
     return Promise.resolve(this.m.get(k) ?? null);
   }
@@ -19,9 +22,16 @@ class MemHost implements Host {
     this.m.delete(k);
     return Promise.resolve();
   }
-  http(url: string, method: string, headers: Record<string, string>, body?: string) {
-    this.calls.push({ url, method, headers, ...(body !== undefined ? { body } : {}) });
+  http(url: string, method: string, headers: Record<string, string>, body: string | undefined, ctx: HttpContext) {
+    this.calls.push({ url, method, headers, ctx, ...(body !== undefined ? { body } : {}) });
     return this.next instanceof Error ? Promise.reject(this.next) : Promise.resolve(this.next);
+  }
+  info() {
+    return Promise.resolve({ lanTest: this.lanTest });
+  }
+  clearConsents() {
+    this.cleared++;
+    return Promise.resolve();
   }
   scanQr() {
     return Promise.resolve(null);
@@ -29,10 +39,14 @@ class MemHost implements Host {
 }
 
 describe("relay adresi", () => {
-  it("wss zorunlu; ws yalnızca yerel ağ testi işaretliyse", () => {
+  it("wss zorunlu; ws yalnızca yerel ağ TEST yapısında, işaretliyse ve yerel ağ adresine", () => {
     expect(validateRelay(" wss://relay.ornek.com/v1/connect ", false)).toBe("wss://relay.ornek.com");
-    expect(() => validateRelay("ws://10.0.0.2:8080", false)).toThrow("RELAY_URL_INSECURE");
-    expect(validateRelay("ws://10.0.0.2:8080", true)).toBe("ws://10.0.0.2:8080");
+    expect(() => validateRelay("ws://10.0.0.2:8080", false, true)).toThrow("RELAY_URL_INSECURE");
+    expect(() => validateRelay("ws://10.0.0.2:8080", true, false)).toThrow("RELAY_URL_INSECURE"); // üretim yapısı
+    expect(validateRelay("ws://10.0.0.2:8080", true, true)).toBe("ws://10.0.0.2:8080");
+    expect(() => validateRelay("ws://relay.ornek.com", true, true)).toThrow("RELAY_URL_NOT_LOCAL");
+    expect(() => validateRelay("wss://u:p@relay.ornek.com", false)).toThrow("RELAY_URL_INVALID");
+    expect(() => validateRelay("wss://169.254.169.254", false)).toThrow("RELAY_URL_INVALID");
     expect(() => validateRelay("https://x.com", true)).toThrow("RELAY_URL_INVALID");
     expect(() => validateRelay("bozuk", true)).toThrow("RELAY_URL_INVALID");
   });
@@ -65,11 +79,38 @@ describe("Store: profil izolasyonu", () => {
   it("hostFetch: kabuk HTTP yanıtını fetch biçimine çevirir", async () => {
     const h = new MemHost();
     h.next = { status: 201, body: '{"ok":true}' };
-    const r = await hostFetch(h)("https://x/v1/a", { method: "POST", headers: { a: "b" }, body: "{}" });
+    const r = await hostFetch(h, "business")("https://x/v1/a", { method: "POST", headers: { a: "b" }, body: "{}" });
+    expect(h.calls[0]?.ctx).toEqual({ purpose: "relay", scope: "business" });
     expect(r.status).toBe(201);
     expect(await r.json()).toEqual({ ok: true });
     h.next = { status: 204, body: "" };
-    expect(await (await hostFetch(h)("https://x", { method: "GET", headers: {} })).json()).toEqual({});
+    expect(await (await hostFetch(h, "personal")("https://x", { method: "GET", headers: {} })).json()).toEqual({});
+    // kabuk politika/onay reddi: kod korunur (RelayApi bunu hata kodu olarak görür)
+    h.next = new Error("HOST_DENIED");
+    const denied = await hostFetch(h, "personal")("https://x", { method: "POST", headers: {} });
+    expect(denied.status).toBe(499);
+    expect(await denied.json()).toEqual({ error: "HOST_DENIED" });
+    h.next = new Error("ağ koptu");
+    await expect(hostFetch(h, "personal")("https://x", { method: "POST", headers: {} })).rejects.toThrow("ağ koptu");
+  });
+});
+
+describe("ağ hedef kuralları (arayüz tarafı; asıl denetim kabukta)", () => {
+  it("özel ağ ve yasak adresler", () => {
+    for (const h of ["10.1.2.3", "172.16.0.1", "172.31.255.255", "192.168.1.10", "127.0.0.1", "100.64.0.1", "localhost", "[::1]", "[fd12::1]"]) expect(isPrivateHost(h), h).toBe(true);
+    for (const h of ["8.8.8.8", "172.32.0.1", "api.openai.com", "ollama.ornek.com", "192.169.0.1"]) expect(isPrivateHost(h), h).toBe(false);
+    for (const h of ["169.254.169.254", "0.0.0.0", "224.0.0.1", "[::]", "[fe80::1]", "[::ffff:169.254.169.254]"]) expect(isForbiddenHost(h), h).toBe(true);
+    expect(isForbiddenHost("192.168.1.1")).toBe(false);
+  });
+  it("yerel AI adresi: yalnızca yerel ağ; http yalnızca test yapısında", () => {
+    expect(validateLocalAiUrl("https://192.168.1.10:11434/v1/", false)).toBe("https://192.168.1.10:11434/v1");
+    expect(validateLocalAiUrl("http://192.168.1.10:11434/v1", true)).toBe("http://192.168.1.10:11434/v1");
+    expect(() => validateLocalAiUrl("http://192.168.1.10:11434/v1", false)).toThrow("CLEARTEXT_BLOCKED");
+    expect(() => validateLocalAiUrl("https://ollama.ornek.com/v1", true)).toThrow("TARGET_NOT_ALLOWED");
+    expect(() => validateLocalAiUrl("https://169.254.169.254/v1", true)).toThrow("TARGET_FORBIDDEN");
+    expect(() => validateLocalAiUrl("ftp://10.0.0.1/v1", true)).toThrow("URL_SCHEME");
+    expect(() => validateLocalAiUrl("https://a:b@10.0.0.1/v1", true)).toThrow("URL_INVALID");
+    expect(() => validateLocalAiUrl("bozuk", true)).toThrow("URL_INVALID");
   });
 });
 
@@ -105,11 +146,28 @@ describe("AI", () => {
 
   it("yerel (OpenAI uyumlu) sağlayıcı ve hata metinleri", async () => {
     const h = new MemHost();
+    h.lanTest = true;
     const s = { ...defaultAiSettings(true), localUrl: "http://10.0.0.5:11434/v1/" };
     h.next = { status: 200, body: JSON.stringify({ choices: [{ message: { content: "Yerel yanıt" } }] }) };
     expect(await chat(h, s, null, "meeting", [{ role: "user", text: "not" }], true)).toBe("Yerel yanıt");
     expect(h.calls[0]?.url).toBe("http://10.0.0.5:11434/v1/chat/completions");
+    expect(h.calls[0]?.ctx).toEqual({ purpose: "local-ai", scope: "business" });
     expect(h.calls[0]?.headers["authorization"]).toBeUndefined();
+    // üretim yapısında http yerel AI, dış ad ve kabuk reddi → BLOCKED; istek gönderilmez
+    h.lanTest = false;
+    const n = h.calls.length;
+    await expect(chat(h, s, null, "general", [], true)).rejects.toMatchObject({ code: "BLOCKED", detail: "CLEARTEXT_BLOCKED" });
+    await expect(chat(h, { ...s, localUrl: "https://ollama.ornek.com/v1" }, null, "general", [], true)).rejects.toMatchObject({ code: "BLOCKED", detail: "TARGET_NOT_ALLOWED" });
+    expect(h.calls.length).toBe(n);
+    h.next = new Error("HOST_DENIED");
+    await expect(chat(h, { ...s, localUrl: "https://10.0.0.5:11434/v1" }, null, "general", [], true)).rejects.toMatchObject({ code: "BLOCKED", detail: "HOST_DENIED" });
+    h.next = new Error("REDIRECT_BLOCKED");
+    await expect(chat(h, defaultAiSettings(false), "sk", "general", [], false)).rejects.toMatchObject({ code: "BLOCKED", detail: "REDIRECT_BLOCKED" });
+    expect(h.calls.at(-1)?.ctx).toEqual({ purpose: "openai", scope: "personal" });
+    for (const c of ["HOST_DENIED", "CLEARTEXT_BLOCKED", "TARGET_NOT_ALLOWED", "TARGET_FORBIDDEN", "REDIRECT_BLOCKED", "URL_INVALID", "URL_SCHEME", "PURPOSE_INVALID", "BASKA"]) {
+      expect(aiErrorText(new AiError("BLOCKED", c))).toBeTruthy();
+    }
+    h.lanTest = true;
     h.next = { status: 200, body: "{}" };
     await expect(chat(h, s, null, "general", [], true)).rejects.toMatchObject({ code: "BAD_RESPONSE" });
     h.next = { status: 500, body: "x" };

@@ -6,6 +6,20 @@
  * Kabuk yoksa (masaüstü tarayıcıda geliştirme) GÜVENSİZ geliştirme kipine düşülür ve arayüz bunu
  * açıkça gösterir; bu kip gerçek kullanım için değildir.
  */
+import type { HttpPurpose, Scope } from "./netpolicy.js";
+
+export interface HttpContext {
+  /** Kabuk hedefi bu amaca göre doğrular (relay / openai / local-ai). */
+  purpose: HttpPurpose;
+  /** Dış hedef onayı alan başına ayrı tutulur. */
+  scope: Scope;
+}
+
+export interface HostInfo {
+  /** Yerel ağ TEST yapısı mı (açık metin yalnızca bu yapıda, yalnızca özel ağa). */
+  lanTest: boolean;
+}
+
 export interface HttpResponse {
   status: number;
   body: string;
@@ -16,8 +30,11 @@ export interface Host {
   get(key: string): Promise<string | null>;
   set(key: string, value: string): Promise<void>;
   remove(key: string): Promise<void>;
-  http(url: string, method: string, headers: Record<string, string>, body?: string): Promise<HttpResponse>;
+  http(url: string, method: string, headers: Record<string, string>, body: string | undefined, ctx: HttpContext): Promise<HttpResponse>;
   scanQr(): Promise<string | null>;
+  info(): Promise<HostInfo>;
+  /** Dış sunucular için verilmiş gönderim onaylarını siler. */
+  clearConsents(): Promise<void>;
 }
 
 interface Channel {
@@ -65,11 +82,17 @@ class BridgeHost implements Host {
   remove(key: string) {
     return this.call<undefined>("storage.delete", { key }).then(() => undefined);
   }
-  http(url: string, method: string, headers: Record<string, string>, body?: string) {
-    return this.call<HttpResponse>("http", { url, method, headers, body: body ?? null });
+  http(url: string, method: string, headers: Record<string, string>, body: string | undefined, ctx: HttpContext) {
+    return this.call<HttpResponse>("http", { url, method, headers, body: body ?? null, purpose: ctx.purpose, scope: ctx.scope });
   }
   scanQr() {
     return this.call<string | null>("qr.scan", {});
+  }
+  info() {
+    return this.call<HostInfo>("host.info", {});
+  }
+  clearConsents() {
+    return this.call<undefined>("consent.clear", {}).then(() => undefined);
   }
 }
 
@@ -98,12 +121,19 @@ class DevHost implements Host {
     }
     return Promise.resolve();
   }
+  // Geliştirme kipi: amaç/alan bağlamı kullanılmaz (politika yalnızca Android kabuğunda uygulanır).
   async http(url: string, method: string, headers: Record<string, string>, body?: string) {
-    const r = await fetch(url, { method, headers, ...(body !== undefined ? { body } : {}) });
+    const r = await fetch(url, { method, headers, redirect: "error", ...(body !== undefined ? { body } : {}) });
     return { status: r.status, body: await r.text() };
   }
   scanQr() {
     return Promise.resolve(null);
+  }
+  info() {
+    return Promise.resolve({ lanTest: true });
+  }
+  clearConsents() {
+    return Promise.resolve();
   }
 }
 

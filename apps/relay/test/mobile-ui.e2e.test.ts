@@ -132,7 +132,9 @@ describe.skipIf(!READY)("mobil arayüz + relay + ajan (Chromium)", () => {
     await ctx.exposeBinding("__th_get", (_s, k: string) => storage.get(k) ?? null);
     await ctx.exposeBinding("__th_set", (_s, k: string, v: string) => void storage.set(k, v));
     await ctx.exposeBinding("__th_remove", (_s, k: string) => void storage.delete(k));
-    await ctx.exposeBinding("__th_http", async (_s, url: string, method: string, headers: Record<string, string>, body: string | null) => {
+    const purposes: string[] = [];
+    await ctx.exposeBinding("__th_http", async (_s, url: string, method: string, headers: Record<string, string>, body: string | null, hctx: { purpose: string; scope: string }) => {
+      purposes.push(`${hctx.purpose}/${hctx.scope}`);
       const r = await fetch(url, { method, headers, ...(body !== null ? { body } : {}) });
       return { status: r.status, body: await r.text() };
     });
@@ -143,8 +145,11 @@ describe.skipIf(!READY)("mobil arayüz + relay + ajan (Chromium)", () => {
         get: (k: string) => w["__th_get"]?.(k),
         set: (k: string, v: string) => w["__th_set"]?.(k, v),
         remove: (k: string) => w["__th_remove"]?.(k),
-        http: (u: string, m: string, h: Record<string, string>, b?: string) => w["__th_http"]?.(u, m, h, b ?? null),
+        http: (u: string, m: string, h: Record<string, string>, b: string | undefined, ctx: unknown) => w["__th_http"]?.(u, m, h, b ?? null, ctx),
         scanQr: () => Promise.resolve(null),
+        // Yerel ağ TEST yapısı benzetimi: relay ws:// ve yerel AI http:// (yalnızca yerel ağ adresleri)
+        info: () => Promise.resolve({ lanTest: true }),
+        clearConsents: () => Promise.resolve(),
       };
     });
     let agent: AgentService | undefined;
@@ -250,6 +255,8 @@ describe.skipIf(!READY)("mobil arayüz + relay + ajan (Chromium)", () => {
       const all = [...storage.values()].join("\n");
       expect(all).not.toContain("uzun-ve-guclu-parola-1");
       expect(errors).toEqual([]);
+      // Her kabuk HTTP isteği amaç ve alanla geldi (kabuk politikası bunlara göre karar verir)
+      expect(new Set(purposes)).toEqual(new Set(["relay/personal", "local-ai/personal"]));
     } finally {
       agent?.close();
       await browser.close();

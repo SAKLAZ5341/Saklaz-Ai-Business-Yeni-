@@ -21,6 +21,7 @@ import {
 } from "@saklaz/client-core";
 import type { InnerMessage, WireOut } from "@saklaz/protocol";
 import type { Host } from "./host.js";
+import { isForbiddenHost, isPolicyCode, isPrivateHost } from "./netpolicy.js";
 
 export type ProfileKind = "personal" | "business";
 
@@ -56,22 +57,43 @@ export interface TodoItem {
   due?: string;
 }
 
-export function hostFetch(host: Host) {
+/**
+ * Relay hesap API'si için kabuk HTTP'si (amaç: relay). Kabuk isteği politika veya onay nedeniyle
+ * reddederse kod korunur: RelayApi bunu RelayApiError(kod) olarak görür (ağ hatasıyla karışmaz).
+ */
+export function hostFetch(host: Host, scope: ProfileKind) {
   return async (url: string, init: { method: string; headers: Record<string, string>; body?: string }) => {
-    const r = await host.http(url, init.method, init.headers, init.body);
+    let r;
+    try {
+      r = await host.http(url, init.method, init.headers, init.body, { purpose: "relay", scope });
+    } catch (e) {
+      const code = e instanceof Error ? e.message : "";
+      if (isPolicyCode(code)) return { status: 499, json: () => Promise.resolve({ error: code }) };
+      throw e;
+    }
     return { status: r.status, json: () => Promise.resolve(r.body ? (JSON.parse(r.body) as unknown) : {}) };
   };
 }
 
-export function validateRelay(url: string, insecure: boolean): string {
+/**
+ * Relay adresi: wss zorunlu. ws:// yalnızca yerel ağ TEST yapısında, kullanıcı açıkça seçtiyse ve adres
+ * yerel ağdaysa (özel IP / localhost).
+ */
+export function validateRelay(url: string, insecure: boolean, lanTest = false): string {
   let u: URL;
   try {
     u = new URL(url.trim());
   } catch {
     throw new Error("RELAY_URL_INVALID");
   }
-  if (u.protocol === "wss:" || (u.protocol === "ws:" && insecure)) return `${u.protocol}//${u.host}`;
-  throw new Error(u.protocol === "ws:" ? "RELAY_URL_INSECURE" : "RELAY_URL_INVALID");
+  if (u.username || u.password || isForbiddenHost(u.hostname)) throw new Error("RELAY_URL_INVALID");
+  if (u.protocol === "wss:") return `wss://${u.host}`;
+  if (u.protocol === "ws:") {
+    if (!insecure || !lanTest) throw new Error("RELAY_URL_INSECURE");
+    if (!isPrivateHost(u.hostname)) throw new Error("RELAY_URL_NOT_LOCAL");
+    return `ws://${u.host}`;
+  }
+  throw new Error("RELAY_URL_INVALID");
 }
 
 const key = (p: string, k: string) => `p:${p}:${k}`;
@@ -117,9 +139,10 @@ export class Store {
 }
 
 /** Hesap oluşturma: TOTP kurulum adresini döndürür (doğrulama uygulamasına eklenir). */
-export async function registerAccount(host: Host, relayUrl: string, insecure: boolean, email: string, password: string): Promise<string> {
+export async function registerAccount(host: Host, kind: ProfileKind, relayUrl: string, insecure: boolean, email: string, password: string): Promise<string> {
   await initCrypto();
-  const api = new RelayApi(validateRelay(relayUrl, insecure), hostFetch(host));
+  const { lanTest } = await host.info();
+  const api = new RelayApi(validateRelay(relayUrl, insecure, lanTest), hostFetch(host, kind));
   return (await api.register(email.trim(), password)).otpauth;
 }
 
@@ -129,8 +152,9 @@ export async function createProfile(
   input: { name: string; kind: ProfileKind; relayUrl: string; insecure: boolean; email: string; password: string; code: string },
 ): Promise<ProfileMeta> {
   await initCrypto();
-  const relayUrl = validateRelay(input.relayUrl, input.insecure);
-  const api = new RelayApi(relayUrl, hostFetch(store.host));
+  const { lanTest } = await store.host.info();
+  const relayUrl = validateRelay(input.relayUrl, input.insecure, lanTest);
+  const api = new RelayApi(relayUrl, hostFetch(store.host, input.kind));
   const login = await api.login(input.email.trim(), input.password, input.code.trim());
   const phone = PhoneClient.createWorkspace({ label: input.kind === "business" ? "Telefon (kurumsal)" : "Telefon" });
   await api.registerDevice(login.accessToken, login.accountId, phone.id, "phone", phone.sign);
@@ -175,7 +199,7 @@ export class Session {
     refresh: string,
     private readonly onChange: () => void,
   ) {
-    const api = new RelayApi(meta.relayUrl, hostFetch(store.host));
+    const api = new RelayApi(meta.relayUrl, hostFetch(store.host, meta.kind));
     const tokens = new TokenManager(api, refresh, (t) => store.setSecret(meta.id, "refresh", t));
     this.conn = new RelayConnection({
       url: connectUrl(meta.relayUrl),

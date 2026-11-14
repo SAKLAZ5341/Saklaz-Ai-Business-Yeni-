@@ -6,6 +6,7 @@
  * AI komut GÖNDEREMEZ: yalnızca metin üretir. Bilgisayara komut her zaman kullanıcı tarafından gönderilir.
  */
 import type { Host } from "./host.js";
+import { isPolicyCode, validateLocalAiUrl } from "./netpolicy.js";
 
 export type AiProvider = "openai" | "local";
 
@@ -31,7 +32,7 @@ export const MODES = {
 export type AiMode = keyof typeof MODES;
 
 export class AiError extends Error {
-  constructor(readonly code: "NO_KEY" | "CLOUD_BLOCKED" | "NETWORK" | "API_ERROR" | "BAD_RESPONSE" | "NO_LOCAL_URL", readonly detail = "") {
+  constructor(readonly code: "NO_KEY" | "CLOUD_BLOCKED" | "NETWORK" | "API_ERROR" | "BAD_RESPONSE" | "NO_LOCAL_URL" | "BLOCKED", readonly detail = "") {
     super(code);
     this.name = "AiError";
   }
@@ -45,7 +46,14 @@ function messages(mode: AiMode, history: ChatTurn[]) {
   return [{ role: "system", content: MODES[mode].prompt }, ...history.slice(-20).map((t) => ({ role: t.role, content: t.text }))];
 }
 
+/** Kabuk isteği reddederse (politika/onay) BLOCKED; diğer hatalar NETWORK. */
+function hostError(e: unknown): AiError {
+  const code = e instanceof Error ? e.message : "";
+  return isPolicyCode(code) ? new AiError("BLOCKED", code) : new AiError("NETWORK");
+}
+
 export async function chat(host: Host, s: AiSettings, apiKey: string | null, mode: AiMode, history: ChatTurn[], business: boolean): Promise<string> {
+  const scope = business ? "business" : "personal";
   if (s.provider === "openai") {
     if (business && !s.allowCloud) throw new AiError("CLOUD_BLOCKED");
     if (!apiKey) throw new AiError("NO_KEY");
@@ -56,19 +64,29 @@ export async function chat(host: Host, s: AiSettings, apiKey: string | null, mod
         "POST",
         { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
         JSON.stringify({ model: s.model, instructions: MODES[mode].prompt, input: history.slice(-20).map((t) => ({ role: t.role, content: t.text })), store: false }),
+        { purpose: "openai", scope },
       );
-    } catch {
-      throw new AiError("NETWORK");
+    } catch (e) {
+      throw hostError(e);
     }
     if (r.status >= 400) throw new AiError("API_ERROR", apiErrorMessage(r.body, r.status));
     return extractResponsesText(r.body);
   }
   if (!s.localUrl) throw new AiError("NO_LOCAL_URL");
+  let base: string;
+  try {
+    base = validateLocalAiUrl(s.localUrl, (await host.info()).lanTest);
+  } catch (e) {
+    throw new AiError("BLOCKED", e instanceof Error ? e.message : "URL_INVALID");
+  }
   let r;
   try {
-    r = await host.http(`${s.localUrl.replace(/\/+$/, "")}/chat/completions`, "POST", { "content-type": "application/json" }, JSON.stringify({ model: s.model, messages: messages(mode, history), stream: false }));
-  } catch {
-    throw new AiError("NETWORK");
+    r = await host.http(`${base}/chat/completions`, "POST", { "content-type": "application/json" }, JSON.stringify({ model: s.model, messages: messages(mode, history), stream: false }), {
+      purpose: "local-ai",
+      scope,
+    });
+  } catch (e) {
+    throw hostError(e);
   }
   if (r.status >= 400) throw new AiError("API_ERROR", apiErrorMessage(r.body, r.status));
   try {
@@ -120,5 +138,21 @@ export function aiErrorText(e: unknown): string {
       return `AI sunucusu hata döndürdü (${e.detail}).`;
     case "BAD_RESPONSE":
       return "AI yanıtı okunamadı.";
+    case "BLOCKED":
+      return policyText(e.detail);
   }
+}
+
+export function policyText(code: string): string {
+  const m: Record<string, string> = {
+    HOST_DENIED: "Bu sunucuya gönderime izin vermediniz. (Ayarlar → Ağ izinlerini sıfırla ile yeniden sorulur.)",
+    CLEARTEXT_BLOCKED: "Şifresiz (http) bağlantı bu yapıda kapalı. https kullanın; http yalnızca yerel ağ test yapısında ve yalnızca yerel ağ adreslerine.",
+    TARGET_NOT_ALLOWED: "Bu adrese bu amaçla gönderim izinli değil. Yerel AI yalnızca yerel ağ adresleri (192.168.x.x, 10.x.x.x, 172.16–31.x.x) olabilir.",
+    TARGET_FORBIDDEN: "Bu adres hiçbir amaçla kullanılamaz.",
+    REDIRECT_BLOCKED: "Sunucu yönlendirme döndürdü; güvenlik nedeniyle izlenmedi.",
+    URL_INVALID: "Adres geçersiz.",
+    URL_SCHEME: "Adres https:// (veya test yapısında http://) ile başlamalı.",
+    PURPOSE_INVALID: "Geçersiz istek.",
+  };
+  return m[code] ?? `İstek engellendi (${code}).`;
 }

@@ -123,26 +123,36 @@ jobs:
         with:
           flutter-version: 3.27.4
           channel: stable
-      - name: Android projesi ve analiz
+      - name: Android projesi, analiz ve ağ politikası testleri
         working-directory: apps/mobile/app
         run: |
           flutter create --org com.saklaz --project-name saklaz_ai --platforms android .
-          rm -rf test
+          rm -f test/widget_test.dart
           python3 tool/prepare_android.py .
           flutter pub get
-          flutter analyze --no-fatal-infos lib
-      - name: APK derlemesi
+          flutter analyze --no-fatal-infos lib test
+          flutter test
+      - name: APK derlemesi — üretim (açık metin kapalı) ve yerel ağ test yapısı
         working-directory: apps/mobile/app
         run: |
+          AAPT2="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/aapt2"
+          cleartext() { "$AAPT2" dump xmltree "$1" --file AndroidManifest.xml | grep -A0 'usesCleartextTraffic' | sed -E 's/.*=//'; }
+          python3 tool/prepare_android.py .
           flutter build apk --release
           cp build/app/outputs/flutter-apk/app-release.apk "$RUNNER_TEMP/saklaz-ai-0.1.0-alpha.apk"
-          (cd "$RUNNER_TEMP" && sha256sum saklaz-ai-0.1.0-alpha.apk > saklaz-ai-0.1.0-alpha.apk.sha256 && cat saklaz-ai-0.1.0-alpha.apk.sha256)
+          v="$(cleartext "$RUNNER_TEMP/saklaz-ai-0.1.0-alpha.apk")"; echo "üretim usesCleartextTraffic=$v"; [ "$v" = "false" ]
+          python3 tool/prepare_android.py . --lan-test
+          flutter build apk --release --dart-define=SAKLAZ_LAN_TEST=true
+          cp build/app/outputs/flutter-apk/app-release.apk "$RUNNER_TEMP/saklaz-ai-0.1.0-alpha-lan-test.apk"
+          v="$(cleartext "$RUNNER_TEMP/saklaz-ai-0.1.0-alpha-lan-test.apk")"; echo "test yapısı usesCleartextTraffic=$v"; [ "$v" = "true" ]
+          (cd "$RUNNER_TEMP" && sha256sum saklaz-ai-0.1.0-alpha.apk saklaz-ai-0.1.0-alpha-lan-test.apk > saklaz-ai-0.1.0-alpha.apk.sha256 && cat saklaz-ai-0.1.0-alpha.apk.sha256)
           cp pubspec.lock "$RUNNER_TEMP/pubspec.lock"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: saklaz-ai-android-apk
           path: |
             ${{ runner.temp }}/saklaz-ai-0.1.0-alpha.apk
+            ${{ runner.temp }}/saklaz-ai-0.1.0-alpha-lan-test.apk
             ${{ runner.temp }}/saklaz-ai-0.1.0-alpha.apk.sha256
             ${{ runner.temp }}/pubspec.lock
           retention-days: 30

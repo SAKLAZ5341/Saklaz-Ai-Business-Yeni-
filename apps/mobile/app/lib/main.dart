@@ -15,6 +15,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import 'net_policy.dart';
+
 const _bg = Color(0xFF0B0E13);
 
 void main() {
@@ -94,6 +96,16 @@ class _HostPageState extends State<HostPage> {
         case 'http':
           value = await _request(args);
           break;
+        case 'host.info':
+          value = {'lanTest': kLanTest, 'version': '0.1.0-alpha'};
+          break;
+        case 'consent.clear':
+          final all = await _storage.readAll();
+          for (final k in all.keys.where((k) => k.startsWith('consent:'))) {
+            await _storage.delete(key: k);
+          }
+          value = null;
+          break;
         case 'qr.scan':
           if (!mounted) throw StateError('UNMOUNTED');
           value = await Navigator.of(context).push<String?>(MaterialPageRoute(builder: (_) => const ScannerPage()));
@@ -104,22 +116,70 @@ class _HostPageState extends State<HostPage> {
       await _reply({'id': id, 'ok': true, 'value': value});
     } catch (e) {
       // Hata ayrıntısı (anahtar, adres, yanıt gövdesi) arayüze taşınmaz; yalnızca kısa kod.
-      final code = e is StateError ? e.message : (e is SocketException || e is TimeoutException || e is HttpException ? 'NETWORK' : 'HOST_ERROR');
+      final code = e is StateError
+          ? e.message
+          : e is PolicyError
+              ? e.code
+              : (e is SocketException || e is TimeoutException || e is HttpException ? 'NETWORK' : 'HOST_ERROR');
       await _reply({'id': id, 'ok': false, 'error': code});
     }
   }
 
+  // Onay pencereleri sırayla gösterilir (aynı anda birden çok istek gelse bile).
+  Future<void> _consentChain = Future.value();
+
+  Future<void> _ensureConsent(NetTarget t, String scope, String purpose) {
+    if (t.private) return Future.value(); // yerel ağ / loopback: cihazın ağından çıkmaz
+    final key = consentKey(scope, t.uri);
+    final run = _consentChain.then((_) async {
+      if (await _storage.read(key: key) == 'yes') return;
+      if (!mounted) throw StateError('UNMOUNTED');
+      final business = scope == 'business';
+      final what = purpose == 'openai' ? 'yapay zekâ isteği (yazdığınız metin)' : purpose == 'relay' ? 'hesap ve bağlantı istekleri' : 'yapay zekâ isteği';
+      final ok = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: Text(business ? 'KURUMSAL alan: dış sunucuya gönderim' : 'Dış sunucuya gönderim'),
+          content: Text('${t.uri.scheme}://${t.uri.host}${t.uri.hasPort ? ':${t.uri.port}' : ''}\n\n'
+              'Bu adrese $what gönderilecek. '
+              '${business ? 'Kurumsal veri bu sunucuya gidebilir. ' : ''}'
+              'İzin verirseniz bu alan için hatırlanır (Ayarlar → Ağ izinlerini sıfırla).'),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Reddet')),
+            FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('İzin ver')),
+          ],
+        ),
+      );
+      if (ok != true) throw StateError('HOST_DENIED');
+      await _storage.write(key: key, value: 'yes');
+    });
+    _consentChain = run.catchError((_) {});
+    return run;
+  }
+
   Future<Map<String, Object>> _request(Map<String, dynamic> a) async {
-    final uri = Uri.parse(a['url'] as String);
-    if (uri.scheme != 'https' && uri.scheme != 'http') throw StateError('URL_SCHEME');
+    final purpose = a['purpose'];
+    final scope = a['scope'];
+    if (purpose is! String || scope is! String || !kScopes.contains(scope)) throw StateError('PURPOSE_INVALID');
+    final target = checkTarget(a['url'] as String, purpose, lanTest: kLanTest);
+    final uri = target.uri;
     final method = (a['method'] as String).toUpperCase();
     if (method != 'POST' && method != 'GET') throw StateError('METHOD');
+    await _ensureConsent(target, scope, purpose);
     final req = await _http.openUrl(method, uri).timeout(const Duration(seconds: 30));
+    // Yönlendirme izlenmez: yeni hedef politikadan ve onaydan geçmemiş olur.
+    req.followRedirects = false;
+    req.maxRedirects = 0;
     final headers = (a['headers'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
     headers.forEach((k, v) => req.headers.set(k, v.toString()));
     final body = a['body'];
     if (body is String) req.add(utf8.encode(body));
     final res = await req.close().timeout(const Duration(seconds: 120));
+    if (isRedirect(res.statusCode)) {
+      await res.drain<void>();
+      throw StateError('REDIRECT_BLOCKED');
+    }
     final bytes = <int>[];
     await for (final chunk in res) {
       bytes.addAll(chunk);

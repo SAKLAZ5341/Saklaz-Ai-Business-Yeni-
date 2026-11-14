@@ -2,7 +2,8 @@
  * SAKLAZ AI mobil arayüzü (MVP alfa). Çerçevesiz DOM; bütün durum app.ts'dedir.
  */
 import { RelayApiError } from "@saklaz/client-core";
-import { aiErrorText, chat, defaultAiSettings, MODES, type AiMode, type AiSettings, type ChatTurn } from "./ai.js";
+import { aiErrorText, chat, defaultAiSettings, MODES, policyText, type AiMode, type AiSettings, type ChatTurn } from "./ai.js";
+import { isPolicyCode } from "./netpolicy.js";
 import { createProfile, registerAccount, Session, Store, type NoteItem, type ProfileMeta, type TodoItem } from "./app.js";
 import { detectHost, type Host } from "./host.js";
 
@@ -16,6 +17,8 @@ let selected: string | undefined;
 let aiMode: AiMode = "general";
 let chatHistory: ChatTurn[] = [];
 let aiBusy = false;
+/** Yerel ağ TEST yapısı mı (kabuktan; üretim yapısında false). */
+let lanTest = false;
 
 // ---- küçük DOM yardımcıları --------------------------------------------------------------------
 type Child = Node | string | null | undefined | false;
@@ -51,12 +54,14 @@ function errText(e: unknown): string {
       NETWORK: "Relay sunucusuna ulaşılamadı.",
       RATE_LIMITED: "Çok fazla istek. Biraz bekleyin.",
     };
+    if (isPolicyCode(e.code)) return policyText(e.code);
     return m[e.code] ?? `Relay hatası: ${e.code}`;
   }
   const msg = e instanceof Error ? e.message : String(e);
   const m: Record<string, string> = {
     RELAY_URL_INVALID: "Relay adresi geçersiz (wss://… olmalı).",
-    RELAY_URL_INSECURE: "ws:// yalnızca 'yerel ağ testi' işaretliyse kullanılabilir.",
+    RELAY_URL_INSECURE: "ws:// yalnızca yerel ağ TEST yapısında ve 'yerel ağ testi' işaretliyse kullanılabilir. wss:// kullanın.",
+    RELAY_URL_NOT_LOCAL: "ws:// yalnızca yerel ağ adresleriyle (192.168.x.x, 10.x.x.x …) kullanılabilir.",
     QR_INVALID: "Eşleştirme kodu geçersiz.",
     QR_EXPIRED: "Eşleştirme kodunun süresi dolmuş. Bilgisayarda yeniden başlatın.",
     ALREADY_PAIRED: "Bu bilgisayar zaten ekli.",
@@ -70,6 +75,7 @@ function frame(content: Node, withNav: boolean): void {
   if (!app) return;
   const parts: (Node | null)[] = [
     host.kind === "dev-insecure" ? h("div", { class: "banner" }, "GELİŞTİRME KİPİ: anahtarlar tarayıcı deposunda, şifresiz. Gerçek kullanım için Android uygulamasını kullanın.") : null,
+    lanTest && host.kind !== "dev-insecure" ? h("div", { class: "banner" }, "YEREL AĞ TEST YAPISI: yerel ağ adreslerine şifresiz (ws/http) bağlantıya izin verir. Günlük kullanım için üretim APK'sını kurun.") : null,
     h(
       "header",
       {},
@@ -145,7 +151,9 @@ function onboarding(): void {
         h("input", { id: "pname", placeholder: "ör. Ev, Şirket" }),
         h("label", {}, "Relay adresi"),
         h("input", { id: "relay", placeholder: "wss://relay.ornek.com", autocapitalize: "off", autocomplete: "off" }),
-        h("label", { class: "row" }, h("input", { id: "insecure", type: "checkbox" }), h("span", {}, "Yerel ağ testi (ws://, TLS yok — yalnızca test)")),
+        lanTest
+          ? h("label", { class: "row" }, h("input", { id: "insecure", type: "checkbox" }), h("span", { class: "warn" }, "Yerel ağ testi (ws://, TLS yok — yalnızca yerel ağ adresleri, yalnızca test)"))
+          : null,
         h(
           "div",
           { class: "tabs2", style: "margin-top:12px" },
@@ -195,16 +203,17 @@ function onboarding(): void {
     ($("pname") as HTMLInputElement).value = k.pname;
     ($("relay") as HTMLInputElement).value = k.relay;
     ($("email") as HTMLInputElement).value = k.email;
-    ($("insecure") as HTMLInputElement).checked = k.insecure;
+    const ins = $("insecure") as HTMLInputElement | null;
+    if (ins) ins.checked = k.insecure;
   };
   const submit = async () => {
     const msg = $("obmsg");
     const btn = $("obgo") as HTMLButtonElement;
     btn.disabled = true;
     try {
-      const insecure = ($("insecure") as HTMLInputElement).checked;
+      const insecure = ($("insecure") as HTMLInputElement | null)?.checked ?? false;
       if (mode === "register") {
-        const otp = await registerAccount(host, val("relay"), insecure, val("email"), val("pw"));
+        const otp = await registerAccount(host, val("kind") === "business" ? "business" : "personal", val("relay"), insecure, val("email"), val("pw"));
         const secret = new URL(otp).searchParams.get("secret") ?? "";
         msg?.replaceChildren(
           h(
@@ -720,6 +729,17 @@ async function settingsTab(): Promise<Node> {
       h(
         "button",
         {
+          class: "btn secondary",
+          onclick: async () => {
+            await host.clearConsents();
+            toast("Dış sunucu izinleri sıfırlandı; bir sonraki gönderimde yeniden sorulur.");
+          },
+        },
+        "Ağ izinlerini sıfırla",
+      ),
+      h(
+        "button",
+        {
           class: "btn danger",
           onclick: async () => {
             if (!confirm("Bu alan bu telefondan silinsin mi? Anahtarlar silinir; bilgisayarlar yeniden eşleştirilmelidir.")) return;
@@ -764,6 +784,11 @@ async function render(): Promise<void> {
 }
 
 async function boot(): Promise<void> {
+  try {
+    lanTest = (await host.info()).lanTest;
+  } catch {
+    lanTest = false;
+  }
   const profiles = await store.profiles();
   const activeId = await host.get("active");
   const meta = profiles.find((p) => p.id === activeId) ?? profiles[0];
