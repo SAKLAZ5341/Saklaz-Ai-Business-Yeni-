@@ -1,8 +1,15 @@
 # Sprint 3 / A3 — Kasa v2 ve DPAPI: Test Planı
 
-> **Tarih:** 2026-11-13
-> **Durum:** 📝 Plan. Uygulama ve testler henüz yazılmadı.
+> **Tarih:** 2026-11-14
+> **Durum:** Tam A3 test planı; ilk DPAPI/KEK dilimi PR #12'de uygulanmış ve henüz main'e birleştirilmemiştir. Bu nedenle tüm A3 testleri tamamlanmış sayılmaz.
 > **Bağlı belge:** SPRINT-3-A3-TEKNIK-TASARIM.md
+
+## 0.1 Uygulama ve doğrulama durumu (2026-11-14)
+
+- PR #12 açık ve birleştirilmemiştir. Windows CI'da gerçek DPAPI modülü derlenmiş; koruma/çözme testleri ve ikinci kullanıcıyla ham DPAPI blob testi çalışmıştır. PR #12'nin sekiz zorunlu kontrolü başarılıdır.
+- Mevcut ikinci kullanıcı betiği T-A3-22'nin yalnızca ham blob bölümünü kapsar. B kullanıcı Administrators grubuna eklenmektedir, görev `/rl highest` ile çalıştırılmaktadır ve parola `net user` / `schtasks /rp` süreç argümanlarına aktarılmaktadır. Bu yöntem standart kullanıcı ve kimlik bilgisi güvenliği kabul kriterlerini karşılamaz.
+- Betik gerçek `ProtectedKeyStore` (`kek.bin`) dosyasını açmayı denememektedir. `ProtectedKeyStore.load()` önce SID/MachineGuid bağlama özetini karşılaştırdığı için farklı kullanıcıda kasa dosyası testi için beklenen hata `BINDING_MISMATCH`; ham DPAPI blob testi için beklenen hata `UNPROTECT_FAILED` olmalıdır.
+- Bu nedenle T-A3-22'nin ham blob ve gerçek kasa dosyası alt testleri ayrı çalıştırılmalı; B standart kullanıcı olmalı ve parola hiçbir süreç komut satırına yazılmamalıdır. Tam kasa v2, atomik yazım, geçiş ve kilit kurtarma senaryoları henüz tamamlanmış kabul edilmez.
 
 ## 1. İlkeler
 
@@ -48,7 +55,8 @@
 |---|---|---|
 | T-A3-20 | `machineGuid` farklı (sahte koruyucuyla benzetim) | `BINDING_MISMATCH` |
 | T-A3-21 | `userSid` farklı (benzetim) | `BINDING_MISMATCH` |
-| T-A3-22 | **Gerçek ikinci Windows kullanıcısı** (§4.2): kasa kullanıcı A ile oluşturulur, kullanıcı B dosyayı açmayı dener | `UNWRAP_FAILED`; B'nin çıktısında hiçbir değer yok |
+| T-A3-22a | **Gerçek ikinci Windows kullanıcısı — ham DPAPI blob'u:** A'nın blob'unu B çözmeye çalışır | `UNPROTECT_FAILED`; B kendi blob'unu çözebilir; A kendi blob'unu çözmeye devam eder. B standart kullanıcı olmalı. |
+| T-A3-22b | **Gerçek ikinci Windows kullanıcısı — ProtectedKeyStore dosyası:** A'nın `kek.bin` dosyası B tarafından `ProtectedKeyStore.load()` ile açılmaya çalışılır | Bağlama denetimi nedeniyle `BINDING_MISMATCH`; dosya değişmez ve hiçbir gizli değer çıktılanmaz. B kendi mağazasını açabilir. |
 | T-A3-23 | Gerçek DPAPI: yanlış entropy ile `unprotect` | Başarısız |
 | T-A3-24 | Gerçek DPAPI: blob'da tek bayt değişikliği | Başarısız |
 | T-A3-25 | `userSid()` ve `machineGuid()` | Biçimleri doğru (`S-1-5-21-…`, GUID); yönetici yetkisi olmadan çalışır |
@@ -63,7 +71,8 @@
 | T-A3-33 | Yeniden başlatmadan sonra rollback testi: veritabanı dosyası eski kopyayla değiştirilir | Mevcut S20 davranışı korunur: geri yükleme tespit edilir |
 | T-A3-34 | Yazım hatası (salt okunur dosya, kilitli hedef) | `WRITE_FAILED`; bellekteki durum ve dosya eski halinde; ajan mesajı onaylamaz |
 | T-A3-35 | Antivirüs benzetimi: hedef dosya kısa süre paylaşımsız açık tutulur | Yeniden deneme sonrası başarılı; süre sınırı aşılırsa `WRITE_FAILED` |
-| T-A3-36 | İkinci süreç aynı kasayı açmaya çalışır | `VAULT_LOCKED` |
+| T-A3-36 | İkinci süreç aynı kasayı açmaya çalışır | `VAULT_LOCKED`; canlı kilit hiçbir koşulda çalınmaz |
+| T-A3-37 | **Sahip süreç kilit dosyasını oluşturduktan sonra zorla sonlandırılır; yeni süreç yeniden açar** | OS tanıtıcısı bırakılmış olsa da kalan dosya girdisi güvenli protokolle ele alınır; canlı süreç kilidi silinmez/çalınmaz; kurtarma sonucu ve hata kodu doğrulanır |
 
 ### 3.5 Yetkisiz erişim ve günlük
 
@@ -102,16 +111,21 @@ Mevcut "Windows — kripto, protokol ve ajan (SQLCipher yerel modülü)" işine 
 
 ### 4.2 İkinci kullanıcıyla izolasyon testi (T-A3-22)
 
-GitHub'ın Windows sanal makinesi geçicidir ve iş yönetici olarak çalışır.
+GitHub'ın Windows sanal makinesi geçicidir ve iş yönetici olarak çalışır; bu, test edilen B hesabının yönetici olması gerektiği anlamına gelmez.
 
-1. Test sırasında rastgele parolalı, geçici bir yerel kullanıcı oluşturulur: `net user saklaz-t2 <rastgele> /add`. Parola yalnızca bu iş boyunca bellekte ve süreç argümanında bulunur. Depoya, secret'lara veya günlüğe yazılmaz. Bu bir repo secret'ı değildir.
-2. Kullanıcı A (iş kullanıcısı) bir kasa oluşturur.
-3. Kasa dosyası kullanıcı B'nin okuyabileceği bir yere kopyalanır.
-4. Kullanıcı B adına, profil yüklenerek (DPAPI ana anahtarı için gerekli) zamanlanmış görevle küçük bir Node betiği çalıştırılır: `schtasks /create /ru saklaz-t2 /rp … /sc once` + `schtasks /run`. Betik kasayı açmayı dener ve sonucu bir dosyaya yazar.
-5. **Beklenen:** `UNWRAP_FAILED`. Sonuç dosyasında hiçbir gizli değer yok.
-6. Temizlik: görev ve kullanıcı silinir.
+**Mevcut CI kapsamı ve sınırı:** PR #12 betiği A'nın ham DPAPI blob'unu oluşturur; farklı SID'li B hesabında `UNPROTECT_FAILED` bekler; B'nin kendi DPAPI gidiş-dönüşünü ve A'nın kendi blob'unu yeniden açmasını doğrular. Bu gerçek Windows DPAPI testidir, ancak B'yi Administrators grubuna eklediği ve parolayı `net user` / `schtasks /rp` argümanlarına verdiği için güvenli kabul testi değildir. Ayrıca `ProtectedKeyStore` dosyasını test etmez.
 
-**Risk:** Zamanlanmış görevin GitHub sanal makinesinde profil yükleme davranışı ilk denemede doğrulanacak. Yöntem çalışmazsa bu durum raporlanır; test sessizce kaldırılmaz. Alternatif: `Start-Process -Credential -LoadUserProfile`. O da çalışmazsa T-A3-22 **yalnızca gerçek cihazda** doğrulanır ve raporda öyle yazılır.
+**Kabul testi şu şekilde yeniden uygulanmalıdır:**
+
+1. B, geçici **standart yerel kullanıcı** olarak oluşturulur; Administrators grubuna eklenmez ve yükseltilmiş görev çalıştırılmaz.
+2. Parola, `SecureString` kabul eden yerel kullanıcı API'si veya eşdeğer güvenli Windows API'si ile işlenir. Parola `net user`, `schtasks /rp`, process argümanı, dosya veya günlük içine konmaz.
+3. B süreci kendi profili yüklenerek başlatılır (ör. `Start-Process -Credential -LoadUserProfile` veya eşdeğer güvenli yöntem). Yalnızca test klasörüne gereken okuma/yazma ACL'i verilir.
+4. **Ham blob alt testi:** A'nın DPAPI blob'u B tarafından açılmaya çalışılır; beklenen `UNPROTECT_FAILED`. B kendi DPAPI blob'unu açabilmeli; A da kendi blob'unu açabilmelidir.
+5. **Gerçek kasa dosyası alt testi:** A'nın `kek.bin` dosyası B'nin okuyabildiği geçici konuma kopyalanır ve B adına `ProtectedKeyStore.load()` çağrılır; beklenen `BINDING_MISMATCH` (SID/MachineGuid bağlama kontrolü DPAPI unwrap'tan önce gelir). Dosyanın özeti değişmemelidir.
+6. B kendi `kek.bin` dosyasını başarıyla açabilmelidir. Hiçbir sonuç dosyası KEK, blob veya düz metin içermemelidir.
+7. Geçici görev/süreç, kullanıcı ve klasör temizlenir; temizlik hataları gizlenmez.
+
+**Kabul kapısı:** Mevcut CI betiği bu koşullara göre düzeltilmeden T-A3-22 tamamlandı sayılmaz. Gerçek Windows 10/11 bilgisayar testi §5'te ayrıca zorunludur.
 
 ## 5. Gerçek Windows bilgisayarında doğrulama
 
