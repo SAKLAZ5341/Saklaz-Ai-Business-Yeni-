@@ -7,7 +7,7 @@
 | Bileşen | Nereden | Not |
 |---|---|---|
 | Relay sunucusu | `infra/relay` (Docker Compose) | Telefon ve bilgisayarların buluştuğu sunucu. İçerik uçtan uca şifrelidir, relay okuyamaz. |
-| Android APK | GitHub → Actions → PR #13'ün son çalışması → **Artifacts** → `saklaz-ai-android-apk` | Android 7+ önerilir. |
+| Android APK | GitHub → Actions → PR #13'ün son çalışması → **Artifacts** → `saklaz-ai-android-apk` | İki dosya: `saklaz-ai-0.1.0-alpha.apk` (**üretim**: şifresiz bağlantı tamamen kapalı) ve `…-lan-test.apk` (**yalnızca yerel ağ testi**: yerel ağ adreslerine ws/http izinli). Android 7+ önerilir. |
 | Windows ajan paketi | Aynı yerde → `saklaz-agent-win-x64` | Windows 10/11 x64. Node.js kurmak gerekmez (pakette). |
 | Doğrulama uygulaması | Google/Microsoft Authenticator vb. | Hesap girişi parola + 6 haneli kod ister. |
 
@@ -28,13 +28,14 @@ SAKLAZ_RELAY_DOMAIN=lan.invalid SAKLAZ_RELAY_ID=saklaz-lantest SAKLAZ_SECRETS_DI
   -p saklaz-lantest up -d --wait relay db
 ```
 
-Adres: `ws://<makinenin-ip-adresi>:8080`. Telefonda **"Yerel ağ testi"**, Windows'ta `SAKLAZ_ALLOW_INSECURE_RELAY=1` gerekir. Bu kip internete açılmamalıdır. (B seçeneği CI'da sınanmadı.)
+Adres: `ws://<makinenin-yerel-ip-adresi>:8080` (yalnızca 192.168.x.x / 10.x.x.x / 172.16–31.x.x). Telefonda **`…-lan-test.apk`** ve **"Yerel ağ testi"** seçeneği, Windows'ta `SAKLAZ_ALLOW_INSECURE_RELAY=1` gerekir. Üretim APK'sı ws:// kabul etmez. Bu kip internete açılmamalıdır. (B seçeneği CI'da sınanmadı.)
 
 Kişisel ve kurumsal alan için **iki ayrı relay** kurulur (ayrı sunucu, ayrı veritabanı, ayrı hesap).
 
 ## 2. Telefon
 
-1. APK'yı yükleyin. Bilinmeyen kaynak izni gerekir; APK test anahtarıyla imzalıdır.
+1. APK'yı yükleyin (normal kullanım için üretim APK'sı). Bilinmeyen kaynak izni gerekir; APK test anahtarıyla imzalıdır.
+   Uygulama, yerel ağ dışındaki bir sunucuya (relay, OpenAI) ilk kez veri göndermeden önce adresi gösterip **izin ister**; izin alan (kişisel/kurumsal) başına ayrı tutulur ve Ayarlar → **Ağ izinlerini sıfırla** ile geri alınır. Yönlendirme yapan sunuculara gönderim yapılmaz.
 2. **Çalışma alanı ekle:**
    1. Alan türünü (Kişisel / Kurumsal), görünen adı ve relay adresini girin.
    2. **Yeni hesap** ile e-posta ve parolayı (en az 12 karakter) girin.
@@ -71,7 +72,7 @@ Kişisel ve kurumsal alan için **iki ayrı relay** kurulur (ayrı sunucu, ayrı
    powershell -ExecutionPolicy Bypass -File install-startup.ps1 -AgentProfile personal
    ```
 
-6. Durumu görmek için: `saklaz-agent.cmd status --profile personal`
+6. Durumu görmek için: `saklaz-agent.cmd status --profile personal` (arka plan ajanı çalışırken kasa kilitli olduğundan `VAULT_LOCKED` uyarısı verir; bu beklenen davranıştır — aynı kasayı iki süreç aynı anda değiştiremez).
 
 Kurumsal bilgisayar için aynı adımları `--profile business` / `-AgentProfile business` ve kurumsal relay adresiyle yapın.
 
@@ -90,7 +91,7 @@ Kurumsal bilgisayar için aynı adımları `--profile business` / `-AgentProfile
 | Sağlayıcı | Gereken | Not |
 |---|---|---|
 | OpenAI | **Ayarlar → Yapay zekâ**: kendi OpenAI API anahtarınız ve model adı (varsayılan `gpt-5.4-mini`) | Hesabınızda erişilebilen bir model adı girin. Anahtar yalnızca telefonda, şifreli depoda tutulur; kaynak koda veya sunucuya gitmez. |
-| Yerel | OpenAI uyumlu bir sunucu (ör. Ollama) ve adresi: `http://<pc-ip>:11434/v1` | Veri yerel ağdan çıkmaz. |
+| Yerel | OpenAI uyumlu bir sunucu (ör. Ollama) ve adresi: `https://<pc-yerel-ip>:11434/v1` (üretim APK) veya `http://…` (yalnızca lan-test APK) | Yalnızca yerel ağ IP adresleri kabul edilir (alan adı veya genel IP reddedilir); veri yerel ağdan çıkmaz. |
 
 - **Kurumsal alanda** bulut AI varsayılan olarak **kapalıdır**; kullanıcı ayarlardan açıkça izin vermelidir.
 - AI bilgisayarlara komut gönderemez.

@@ -23,11 +23,13 @@
 | E3 | Acil kilidi açma arayüzü yok | Kilit devredeyken profil komut kabul etmez. Açmak için profil klasörü yeniden kurulmalı. | A8 ile |
 | E4 | Sesli komut yok | Arayüzde devre dışı düğme olarak duruyor. | Sonraki sürüm |
 | E5 | Sistem bildirimleri yok | Uygulama içi bildirim var. Push için relay'de FCM yapılandırması gerekir. | Sonraki sürüm |
-| E6 | APK test (debug) anahtarıyla imzalı; `usesCleartextTraffic=true` (yerel ağ test kipi için) | Mağaza/kurumsal dağıtıma uygun değil. | Kod imzalama kararı (KOD-IMZALAMA-ONERI) |
+| E6 | APK test (debug) anahtarıyla imzalı. Üretim APK'sında açık metin trafik kapalı (manifest + network_security_config, CI'da aapt2 ile doğrulanıyor); yerel ağ test APK'sı ayrı ve yalnızca yerel ağ adreslerine açık metne izin verir | Mağaza/kurumsal dağıtıma uygun değil. | Kod imzalama kararı (KOD-IMZALAMA-ONERI) |
 | E7 | Aynı profil için ikinci telefon / telefon değişimi yok | Telefon değişince alan yeniden oluşturulur, bilgisayarlar yeniden eşleştirilir. | Kurtarma akışı (ADR) |
 | E8 | Telefon tarafında tekrar oynatma durumu yerelde; telefon saati çok yanlışsa mesajlar reddedilebilir | Saat farkı toleransı 5 dk | — |
 | E9 | Telefonda `pubspec.lock` depoda değil (CI'da üretiliyor, artifact'e ekleniyor) | Bağımlılık sürümleri pubspec'te sabit, geçişli sürümler değil | Flutter ortamı kurulunca kilitlenecek |
 | E10 | TPM (A4), rollback sağlamlaştırma (A5), iptal doğrulaması (A6) | Sprint 3 planındaki sıra korunuyor | Sprint 3 |
+| E11 | Üretim APK'sında yerel AI yalnızca **HTTPS** ve sistem CA'sının güvendiği bir sertifikayla çalışır; Ollama varsayılan olarak yalnızca HTTP sunar | Üretim APK'sında yerel AI için güvenilir sertifikalı ters vekil (reverse proxy) gerekir; aksi halde yalnızca lan-test APK'sında kullanılabilir | Yerel AI için cihaz eşleştirmesine bağlı sertifika sabitleme (sonraki sürüm) |
+| E12 | Kasa kilidi (`vault.lock`) aynı makinede çöken süreçten kurtarılır; PID yeniden kullanımında kilit "canlı" sayılabilir (güvenli yön: kasa açılmaz, `VAULT_LOCKED`) | Nadiren elle `vault.lock` silinmesi gerekebilir | — |
 
 ## Gerçek cihaz test listesi (bu akşam)
 
