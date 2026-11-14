@@ -1,12 +1,33 @@
 # Dependabot PR İncelemesi (#1–#5)
 
-> **Tarih:** 2026-11-13
-> **Taban:** `main` = `0cd9bec`
-> **Kapsam:** Yalnızca inceleme. Hiçbir PR birleştirilmedi, kapatılmadı veya değiştirilmedi; workflow dosyalarına dokunulmadı.
-> **Kaynaklar:** GitHub API (PR'lar, kontrol sonuçları, iş günlükleri); eylemlerin ilgili sürüm etiketlerinin git ile sığ klonu (`action.yml`, CHANGELOG, README).
-> **Uygulama:** §2.3'teki birleşik çözüm proje sahibinin onayıyla **PR #10** olarak açıldı (`ci/codeql-v4`). PR #2 ve #5 açık bırakıldı; PR #10 birleştirildikten sonra kapatılmaları önerilecek.
+> **Tarih:** 2026-11-14
+> **Güncel taban:** `main` = `7a7742a` (`7a7742a513f577b1925044e7b3b143667cabb6a1`)
+> **Kapsam:** Bu belge PR #1–#5 ve #10'un tarihsel incelemesini korur; aşağıdaki güncel durum bölümü 2026-11-14 itibarıyla kaynak gerçeğidir. Bu PR yalnızca dokümantasyon güncellemesidir; workflow/bağımlılık/kod değişikliği içermez.
+> **Kaynaklar:** GitHub PR metadata/patch'leri, commit check-runs, Actions günlükleri, main workflow dosyaları ve K5 ruleset.
+> **Uygulama:** PR #10 (`487a844862dc50db8d03ce13ee3afc9de1b1b954`) birleştirildi; PR #2 ve #5 birleştirilmeden kapatıldı. PR #1, #3 ve #4 de ayrı ayrı birleştirildi.
 
-## 1. Özet
+## Güncel durum (2026-11-14)
+
+Bu bölüm, aşağıdaki 2026-11-13 tarihli tarihsel incelemedeki durum tablolarını ve önerilen sırayı geçersiz kılar.
+
+| PR | Güncel durum | Merge commit | Merge sonrası main CI | Merge sonrası CodeQL |
+|---|---|---|---|---|
+| #1 setup-node 7.1.0 | Birleştirildi | `f634fa1183c15f950a5d144228b504e25d9f0430` | Başarılı (`43478003060`) | Başarılı (`43478003032`) |
+| #3 checkout 7.0.1 | Birleştirildi | `d9ed76db6d221bb2e44ca277a7670312f8a45e05` | Başarılı (`43475288347`) | Başarılı (`43475288222`) |
+| #4 pnpm/action-setup 6.1.1 | Birleştirildi | `7a7742a513f577b1925044e7b3b143667cabb6a1` | Başarılı (`43479165538`) | Başarılı (`43479165898`) |
+| #2 CodeQL init v4.39.3 | Birleştirilmeden kapatıldı | — | Yerine #10 geçti | Yerine #10 geçti |
+| #5 CodeQL analyze v4.39.3 | Birleştirilmeden kapatıldı | — | Yerine #10 geçti | Yerine #10 geçti |
+| #10 CodeQL init + analyze v4.39.3 | Birleştirildi | `487a844862dc50db8d03ce13ee3afc9de1b1b954` | Sonraki main CI başarılı | Sonraki main CodeQL başarılı |
+
+**Güncel main doğrulaması:** `7a7742a513f577b1925044e7b3b143667cabb6a1` üzerinde K5'in yedi zorunlu check-run'ı tamamlandı ve başarılı. CodeQL init/analyze aynı SHA (`33d7b85da1a04171e211befe2c739303b9a4c066`, v4.39.3) ile sabit. CI'da checkout v7.0.1, setup-node v7.1.0 ve pnpm/action-setup v6.1.1 SHA ile sabit; Node 22 ve `cache: pnpm` korunuyor.
+
+**K5 koruması:** Ruleset `27197647` aktif; strict required checks açık, yedi zorunlu kontrol, yalnızca merge yöntemi, bypass aktörü yok. CodeQL güvenlik eşiği medium-or-higher, alert eşiği errors. Kural/ayar gevşetilmedi.
+
+**PR #11 durumu:** Bu doküman PR'ı (`docs/s3-a3-plan`) main'in 8 commit gerisinde ve 1 commit ilerideydi (`main` SHA yukarıda, ortak taban `0cd9bec`). Strict ruleset nedeniyle bu belge commit'leri dalı güncel main'e eşitlemez; PR, main tabanına göre yeniden doğrulanmadan birleştirilemez.
+
+**Aşağıdaki bölümler tarihsel analizdir:** PR #1/#3/#4'ün merge öncesi durumu ve PR #10 için öneri, 2026-11-13 anlık görüntüsünü açıklar; artık yapılacak iş olarak okunmamalıdır.
+
+## 1. Özet (2026-11-13 tarihsel inceleme)
 
 | PR | Değişiklik | Taban | Kontroller | Değerlendirme |
 |---|---|---|---|---|
@@ -74,13 +95,13 @@ Bu iki PR'daki iki hata da **A0'da düzeltilmiş eski hatalar.** PR'ların CI'ı
 4. Testlerde `afterEach`, klasörü silmeden önce bütün ajanları kapatır. Klasör silme hatası yutulmaz.
 5. Regresyon testleri platforma göre doğrular: Linux'ta `/proc/self/fd`, Windows'ta açık dosyanın yeniden adlandırılamaması. Düzeltme geri alınınca test kırmızı oluyor (negatif kontrol yapıldı).
 
-**Yapılacak:** PR #2 ve #5'in CI'ını yeniden çalıştırmak bu iki hatayı kapatır, çünkü PR'ların test birleştirmesi artık güncel `main` ile yapılır. Ancak `analyze` hatası kalır (§2.1). Bu yüzden bu iki PR'ı tek tek düzeltmek yerine §2.3'teki birleşik PR önerilir.
+**Güncel sonuç:** Bu tarihsel öneri PR #10 ile uygulandı. PR #2 ve #5 birleştirilmeden kapatıldı; güncel main'de CodeQL init ve analyze aynı v4.39.3 SHA'sını kullanıyor ve main CodeQL kontrolü başarılı.
 
 **A3'e etkisi:** Aynı Windows dosya kilidi davranışı, A3'teki `vault.bin` atomik değiştirmesini de etkiler. Antivirüs veya EDR'ın geçici tanıtıcıları yüzünden `ERROR_SHARING_VIOLATION` alınabilir. Tasarımda sınırlı yeniden deneme ve `MoveFileExW(MOVEFILE_WRITE_THROUGH)` öngörüldü (SPRINT-3-A3-TEKNIK-TASARIM.md §8).
 
 ## 3. PR #1, #3, #4 — güncel `main` ile uyumluluk
 
-Üçünün de CI'ı, güncel `main`'in A2 sonrası hali (`13afcf1`) üzerinde **8/8 yeşil**: Docker, Windows ve Dart dahil. Ruleset `strict` (dal güncel olmalı) olduğu için birleştirmeden önce her birinin `main`'in son haline güncellenmesi (`@dependabot rebase`) ve CI'ın yeniden yeşil olması gerekir.
+#1, #3 ve #4 ayrı ayrı birleştirildi. Her merge sonrasında main CI ve CodeQL başarılı oldu; kesin commit ve run kimlikleri yukarıdaki güncel durum tablosundadır. Bu PR'ların workflow patch'leri yalnızca beklenen action SHA satırlarını değiştirdi.
 
 ### 3.1 Kırıcı değişiklikler (kaynak: eylemlerin kendi README ve CHANGELOG'ları)
 
@@ -92,25 +113,25 @@ Bu iki PR'daki iki hata da **A0'da düzeltilmiş eski hatalar.** PR'ların CI'ı
 
 ### 3.2 Node 20 uyarısı
 
-`main`'in güncel CI'ında `actions/checkout@v4.2.2` ve `codeql-action@v3` için *"Node.js 20 is deprecated … forced to run on Node.js 24"* uyarısı var. Dört yükseltmenin dördü de `node24` kullanıyor; birleştirildiklerinde bu uyarılar kalkar.
+Bu uyarı 2026-11-13 tarihli tarihsel main için geçerliydi. Güncel main'de checkout v7.0.1, setup-node v7.1.0, pnpm/action-setup v6.1.1 ve CodeQL Action v4.39.3 kullanılıyor; setup-node adımında Node 22 açıkça seçiliyor.
 
 ## 4. Riskler ve notlar
 
-1. **Birlikte test edilmediler.** Her PR yalnızca kendi değişikliğiyle test edildi. Ruleset'in `strict` kuralı, her birleştirmeden sonra bir sonrakinin güncellenip yeniden test edilmesini zorunlu kıldığı için birleşim kendiliğinden test edilmiş olur.
-2. **Çakışma.** #1, #3 ve #4 `ci.yml`'da komşu satırları değiştiriyor. Birinin birleştirilmesinden sonra diğerleri Dependabot tarafından yeniden kurulmalı; elle çakışma çözümü yapılmamalı.
-3. **pnpm uyarısı.** `pnpm/action-setup@v6` önce pnpm v11'i kurup sonra 10.28.0'a geçiyor ve PATH düzeniyle ilgili bir uyarı veriyor. Şu an zararsız. pnpm 11'e geçiş ayrı bir karar konusu.
-4. **CodeQL v3'ün kullanımdan kalkması** (Aralık 2026), #2/#5 çözümünü zamana bağlıyor.
+1. #1, #3 ve #4 sıralı olarak birleştirildi; her merge sonrasında main CI ve CodeQL başarılı.
+2. #2 ve #5 tek başına birleştirilmedi; #10 aynı SHA'lı init/analyze güncellemesini sağladı ve iki eski PR kapatıldı.
+3. pnpm v6.1.1'in kurulum/versiyon seçimi uyarısı tarihsel CI günlüklerinde not edilmişti; mevcut main testleri başarılı. pnpm sürümüne geçiş ayrı karar olarak kalır.
+4. CodeQL v3 geçiş riski #10 ile giderildi; main artık v4.39.3 kullanıyor.
 
 ## 5. Önerilen sıra
 
 | Sıra | İşlem | Gerekçe |
 |---|---|---|
-| 1 | **CodeQL v4 birleşik PR'ı** (init + analyze aynı SHA ile) + Dependabot grup tanımı → #2 ve #5'i kapatma. **→ PR #10** | Kullanımdan kalkmaya 1 ay var; tek başına birleştirilirlerse `main` kilitlenir |
-| 2 | **#3 checkout 7.0.1** | Bütün işler checkout kullanıyor; güvenlik iyileştirmeleri var |
-| 3 | **#1 setup-node 7.1.0** | `node24`; bizi etkileyen kırıcı değişiklik yok |
-| 4 | **#4 pnpm/action-setup 6.1.1** | `node24`; uyarı izlenecek |
-| 5 | (İsteğe bağlı) `persist-credentials: false` sıkılaştırması | Ayrı, küçük bir PR |
+| 1 | **Tamamlandı: PR #10** — CodeQL init/analyze aynı v4.39.3 SHA; Dependabot grubu eklendi; #2/#5 birleştirilmeden kapatıldı | Main CodeQL başarılı |
+| 2 | **Tamamlandı: PR #3** — checkout 7.0.1 | Merge sonrası CI/CodeQL başarılı |
+| 3 | **Tamamlandı: PR #1** — setup-node 7.1.0 | Merge sonrası CI/CodeQL başarılı |
+| 4 | **Tamamlandı: PR #4** — pnpm/action-setup 6.1.1 | Merge sonrası CI/CodeQL başarılı |
+| 5 | (İsteğe bağlı, ayrı karar) `persist-credentials: false` sıkılaştırması | Bu PR kuyruğunun kapsamı dışında; ayrı inceleme gerekir |
 
-Her adım: Dependabot ile güncel `main`'e yeniden kurma → 8/8 yeşil → sizin onayınızla "merge commit".
+Yukarıdaki dört birleştirme tamamlandı. Yeni action güncellemeleri aynı SHA sabitleme ve zorunlu kontroller sürecinden geçmelidir.
 
 **A3'ten önce mi, sonra mı?** 1. adımın A3'ten önce yapılması önerilir: A3'te Windows CI işine yeni adımlar eklenecek; CodeQL'in v3'te kalması ise A3 sırasında `main`'i kilitleyebilir.
