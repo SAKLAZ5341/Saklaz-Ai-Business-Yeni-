@@ -56,116 +56,34 @@ public static class SaklazLsa {
       u.Length = (ushort)(right.Length * 2);
       u.MaximumLength = (ushort)(u.Length + 2);
       try { st = add ? LsaAddAccountRights(h, b, new[] { u }, 1) : LsaRemoveAccountRights(h, b, false, new[] { u }, 1); }
-      finally { Marshal.FreeHGlobal(u.Buffer); }
-      if (st != 0) throw new Win32Exception(LsaNtStatusToWinError(st));
-    } finally { LsaClose(h); }
-  }
-  public static void Grant(string sid, string right) { Change(sid, right, true); }
-  public static void Revoke(string sid, string right) { Change(sid, right, false); }
-}
-'@
-
-function Invoke-Native([string]$what, [scriptblock]$Block) {
-  & $Block | Out-Host
-  if ($LASTEXITCODE -ne 0) { throw "$what başarısız (çıkış $LASTEXITCODE)" }
-}
-function Group-Name([string]$sid) {
-  ((New-Object System.Security.Principal.SecurityIdentifier $sid).Translate([System.Security.Principal.NTAccount]).Value -split '\\')[-1]
-}
-
-$computer = [ADSI]"WinNT://$env:COMPUTERNAME,computer"
-$created = $false
-$sidB = $null
-$batchGranted = $false
-try {
-  # 1. A: ham blob ve gerçek kasa anahtarı dosyası
-  Invoke-Native 'A: ham blob' { & $node $probe protect (Join-Path $work 'blob.bin') }
-  Invoke-Native 'A: kek.bin oluşturma' { & $node $ksprobe create (Join-Path $work 'kek-a.bin') }
-  $sidA = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
-
-  # 2. B: standart kullanıcı. Parola rastgele; yalnızca bellekte.
-  $chars = [char[]]'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
-  $bytes = New-Object byte[] 20
-  [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
-  $pw = 'Aa1!' + (-join ($bytes | ForEach-Object { $chars[$_ % $chars.Length] }))
-  $u = $computer.Create('User', $user)
-  $u.SetPassword($pw)
-  $u.Put('Description', 'SAKLAZ CI geçici standart kullanıcı (DPAPI izolasyon testi)')
-  $u.SetInfo()
-  $created = $true
-  $usersGroup = Group-Name 'S-1-5-32-545'
-  ([ADSI]"WinNT://$env:COMPUTERNAME/$usersGroup,group").Add("WinNT://$env:COMPUTERNAME/$user,user")
-  $sidB = (New-Object System.Security.Principal.NTAccount "$env:COMPUTERNAME\$user").Translate([System.Security.Principal.SecurityIdentifier]).Value
-  $adminMembers = net localgroup (Group-Name 'S-1-5-32-544')
-  if ($LASTEXITCODE -ne 0) { throw 'Administrators üyeleri okunamadı' }
-  if ($adminMembers -contains $user -or $adminMembers -contains "$env:COMPUTERNAME\$user") { throw 'B, Administrators grubunda; test geçersiz' }
-  [SaklazLsa]::Grant($sidB, 'SeBatchLogonRight')
-  $batchGranted = $true
-
-  # 3. B'nin okuması gereken yerler: çalışma klasörü (yazma), paket (okuma/çalıştırma), Node çalışma zamanı
-  Invoke-Native 'çalışma klasörü izni' { icacls $work /grant "${user}:(OI)(CI)M" }
-  Invoke-Native 'paket okuma izni' { icacls $kp /grant "${user}:(OI)(CI)RX" /T /C /Q }
-  Invoke-Native 'Node okuma izni' { icacls (Split-Path $node) /grant "${user}:(OI)(CI)RX" /T /C /Q }
-
-  $resBlob = Join-Path $work 'result-blob.json'
-  $resKs = Join-Path $work 'result-ks.json'
-  $runCmd = Join-Path $work 'run-b.cmd'
-  if ($runCmd -match '\s') { throw "Görev yolu boşluk içeriyor: $runCmd" }
-  $log = Join-Path $work 'b.log'
-  Set-Content -Path $runCmd -Encoding ascii -Value @(
-    '@echo off',
-    "`"$node`" `"$probe`" cross `"$(Join-Path $work 'blob.bin')`" `"$resBlob`" > `"$log`" 2>&1",
-    "`"$node`" `"$ksprobe`" cross `"$(Join-Path $work 'kek-a.bin')`" `"$resKs`" `"$(Join-Path $work 'kek-b.bin')`" >> `"$log`" 2>&1"
-  )
-
-  # 4. Görev: B adına, parola ile (profil yüklenir), sınırlı yetki. Süreç içi kayıt: parola argv'de değil.
-  $action = New-ScheduledTaskAction -Execute $runCmd
-  $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -AllowStartIfOnBatteries
-  Register-ScheduledTask -TaskName $task -Action $action -Settings $settings -User "$env:COMPUTERNAME\$user" -Password $pw -RunLevel Limited -Force | Out-Null
+      finally {
   $pw = $null
-  Start-ScheduledTask -TaskName $task
-  $deadline = (Get-Date).AddSeconds(180)
-  while (-not ((Test-Path $resBlob) -and (Test-Path $resKs)) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
-  if (-not ((Test-Path $resBlob) -and (Test-Path $resKs))) {
-    $info = Get-ScheduledTaskInfo -TaskName $task
-    $blog = if (Test-Path $log) { Get-Content $log -Raw } else { '(günlük yok)' }
-    throw "B görevi sonuç üretmedi (LastTaskResult=$($info.LastTaskResult)). Günlük: $blog"
+  $problems = @()
+  if (Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue) {
+    Stop-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue
+    for ($i = 0; $i -lt 15 -and (Get-ScheduledTask -TaskName $task).State -eq 'Running'; $i++) { Start-Sleep -Seconds 1 }
+    Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue
+    if (Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue) { $problems += 'görev' }
   }
-  $rb = Get-Content $resBlob -Raw | ConvertFrom-Json
-  $rk = Get-Content $resKs -Raw | ConvertFrom-Json
-  Write-Host ("A SID: {0}`nB SID: {1} (standart kullanıcı, Administrators üyesi değil)" -f $sidA, $sidB)
-  Write-Host ("Ham DPAPI blob'u — B, A'nınkini çözebildi mi: {0} (kod: {1}); B kendi blob'unda: {2}" -f $rb.crossOk, $rb.crossCode, $rb.selfOk)
-  Write-Host ("ProtectedKeyStore — B, A'nın kek.bin'ini açabildi mi: {0} (kod: {1}); B kendi kek.bin'inde: {2}" -f $rk.crossOk, $rk.crossCode, $rk.selfOk)
-
-  foreach ($r in @($rb, $rk)) { if ($r.sid -ne $sidB) { throw "B görevi beklenen kullanıcıyla çalışmadı ($($r.sid))" } }
-  if ($rb.crossOk -or $rk.crossOk) { throw 'GÜVENLİK HATASI: ikinci kullanıcı, birinci kullanıcının verisini açtı' }
-  if ($rb.crossCode -ne 'UNPROTECT_FAILED') { throw "Ham blob: beklenmeyen kod $($rb.crossCode)" }
-  if ($rk.crossCode -ne 'BINDING_MISMATCH') { throw "ProtectedKeyStore: beklenmeyen kod $($rk.crossCode)" }
-  if (-not $rb.selfOk) { throw 'B kendi DPAPI blob''unu çözemedi; sonuç yorumlanamaz' }
-  if (-not $rk.selfOk) { throw "B kendi kek.bin dosyasını açamadı ($($rk.selfCode)); sonuç yorumlanamaz" }
-
-  # 5. A hâlâ kendi verilerini açabiliyor
-  Invoke-Native 'A: ham blob doğrulama' { & $node $probe verify (Join-Path $work 'blob.bin') }
-  Invoke-Native 'A: kek.bin doğrulama' { & $node $ksprobe verify (Join-Path $work 'kek-a.bin') }
-  Write-Host 'DPAPI kullanıcı izolasyonu (standart kullanıcı; ham blob + ProtectedKeyStore): GEÇTİ'
-}
-finally {
-  $pw = $null
-  Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue
-  if ($batchGranted -and $sidB) { try { [SaklazLsa]::Revoke($sidB, 'SeBatchLogonRight') } catch { Write-Warning 'toplu iş hakkı geri alınamadı' } }
-  if ($created) {
-    try { $computer.Delete('User', $user) } catch { Write-Warning 'geçici kullanıcı silinemedi' }
-    if ($sidB) {
-      Get-CimInstance Win32_UserProfile | Where-Object { $_.SID -eq $sidB } | ForEach-Object {
-        try { Remove-CimInstance -InputObject $_ } catch { Write-Warning 'geçici kullanıcı profili silinemedi' }
-      }
+  if ($batchGranted -and $sidB) { try { [SaklazLsa]::Revoke($sidB, 'SeBatchLogonRight') } catch { $problems += 'toplu iş hakkı' } }
+  if ($sidB) {
+    # Profil, kullanıcı silinmeden ÖNCE kaldırılır; oturum kapanışı birkaç saniye sürebildiği için yeniden denenir.
+    $removed = $false
+    for ($i = 0; $i -lt 20 -and -not $removed; $i++) {
+      $prof = Get-CimInstance Win32_UserProfile | Where-Object { $_.SID -eq $sidB }
+      if (-not $prof) { $removed = $true; break }
+      try { $prof | Remove-CimInstance -ErrorAction Stop } catch { Start-Sleep -Seconds 2 }
     }
+    if (-not $removed -and (Get-CimInstance Win32_UserProfile | Where-Object { $_.SID -eq $sidB })) { $problems += 'kullanıcı profili' }
   }
-  Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
   if ($created) {
+    try { $computer.Delete('User', $user) } catch { }
     # Kullanıcı yoksa ADSI "bulunamadı" istisnası atar: beklenen durum budur.
     $still = try { [ADSI]::Exists("WinNT://$env:COMPUTERNAME/$user,user") } catch { $false }
-    if ($still) { throw 'geçici kullanıcı silinemedi' }
-    Write-Host 'Temizlik: görev, toplu iş hakkı, geçici kullanıcı, profil ve dosyalar kaldırıldı'
+    if ($still) { $problems += 'kullanıcı' }
   }
+  Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
+  if (Test-Path $work) { $problems += 'çalışma klasörü' }
+  if ($problems.Count -gt 0) { throw ("Temizlik tamamlanamadı: " + ($problems -join ', ')) }
+  Write-Host 'Temizlik doğrulandı: görev, toplu iş hakkı, kullanıcı profili, geçici kullanıcı ve dosyalar kaldırıldı'
 }
