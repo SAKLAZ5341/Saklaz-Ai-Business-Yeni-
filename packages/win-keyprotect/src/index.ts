@@ -93,7 +93,13 @@ export function wrapNative(raw: NativeKeyProtect): NativeKeyProtect {
     unprotect(blob, entropy) {
       checkBytes(blob, MAX_DATA_BYTES, false);
       checkBytes(entropy, MAX_ENTROPY_BYTES, true);
-      return new Uint8Array(call(() => raw.unprotect(blob, entropy)));
+      // Yerel modülün döndürdüğü tampon (düz metin anahtar) kopyalandıktan sonra sıfırlanır; yalnızca kopya döner.
+      const src = call(() => raw.unprotect(blob, entropy));
+      try {
+        return Uint8Array.from(src);
+      } finally {
+        src.fill(0);
+      }
     },
     userSid: () => call(() => raw.userSid()),
     machineGuid: () => call(() => raw.machineGuid()).toLowerCase(),

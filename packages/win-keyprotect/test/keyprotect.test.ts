@@ -47,6 +47,21 @@ describe("sarmalayıcı (her platform, sahte yerel modül)", () => {
     expect(w.userSid()).toBe("S-1-5-21-1-2-3-1001");
   });
 
+  it("unprotect: yerel modülün döndürdüğü kaynak tampon kopyalandıktan sonra sıfırlanır; dönen değer ayrı bir kopyadır", () => {
+    let src: Buffer | undefined;
+    const tracking = wrapNative({
+      ...fake,
+      unprotect: () => {
+        src = Buffer.from([7, 8, 9, 10]);
+        return src;
+      },
+    });
+    const out = tracking.unprotect(new Uint8Array([1]), ENT);
+    expect([...out]).toEqual([7, 8, 9, 10]);
+    expect(src && [...src]).toEqual([0, 0, 0, 0]);
+    expect(out.buffer).not.toBe(src?.buffer);
+  });
+
   it("girdi denetimi: boş veri, sınırı aşan veri/entropy, Uint8Array olmayan değer", () => {
     expectCode(() => w.protect(new Uint8Array(0), ENT), "INVALID_ARGUMENT");
     expectCode(() => w.protect(new Uint8Array(MAX_DATA_BYTES + 1), ENT), "INVALID_ARGUMENT");
