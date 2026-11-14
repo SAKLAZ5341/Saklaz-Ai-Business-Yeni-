@@ -162,5 +162,10 @@ finally {
     }
   }
   Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
-  if ($created -and ([ADSI]::Exists("WinNT://$env:COMPUTERNAME/$user,user"))) { Write-Warning 'UYARI: geçici kullanıcı hâlâ var' }
+  if ($created) {
+    # Kullanıcı yoksa ADSI "bulunamadı" istisnası atar: beklenen durum budur.
+    $still = try { [ADSI]::Exists("WinNT://$env:COMPUTERNAME/$user,user") } catch { $false }
+    if ($still) { throw 'geçici kullanıcı silinemedi' }
+    Write-Host 'Temizlik: görev, toplu iş hakkı, geçici kullanıcı, profil ve dosyalar kaldırıldı'
+  }
 }
