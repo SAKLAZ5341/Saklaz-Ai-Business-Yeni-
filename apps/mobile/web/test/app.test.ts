@@ -36,6 +36,9 @@ class MemHost implements Host {
   scanQr() {
     return Promise.resolve(null);
   }
+  openSocket(): never {
+    throw new Error("bu testte kullanılmaz");
+  }
 }
 
 describe("relay adresi", () => {
