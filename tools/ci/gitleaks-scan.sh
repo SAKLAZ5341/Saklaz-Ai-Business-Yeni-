@@ -16,11 +16,28 @@
 #   • Satır içi "gitleaks:allow" yok sayılır (--ignore-gitleaks-allow).
 #   • .gitleaks.toml kullanımı yasaktır: taranan uçta bulunursa iş başarısız olur. Tarama ayrıca
 #     çalışma ağacı olmayan bir --mirror kopya üzerinde ve nötr bir dizinden yapılır; böylece PR'ın
-#     getirdiği .gitleaks.toml ve .gitleaksignore hiçbir zaman yüklenmez.
-#   • .gitleaksignore yalnızca GÜVENİLİR referanstan okunur: pr → hedef dal, push → HEAD (main),
-#     full → $TRUSTED_REF (varsayılan dal).
+#     getirdiği .gitleaks.toml ve .gitleaksignore yüklenmez — bu betik ve workflow DEĞİŞTİRİLMEDİĞİ sürece
+#     (aşağıdaki GÜVEN SINIRI).
+#   • .gitleaksignore yalnızca KORUNAN VARSAYILAN DALDAN okunur ($DEFAULT_BRANCH; ör. main):
+#       pr   → refs/remotes/origin/$DEFAULT_BRANCH — PR'ın hedefi başka bir (korumasız) özellik dalı
+#              olsa bile o dalın ignore dosyasına GÜVENİLMEZ;
+#       push → varsayılan dala push edilen commit (yalnızca varsayılan dalda çalışır);
+#       full → $TRUSTED_REF (varsayılan dal; gitleaks-full.yml).
 #   • Gizli değerler hiçbir yerde yazılmaz: --redact; özet yalnızca kural, dosya, satır, commit ve
 #     parmak izini gösterir (parmak izi gizli değeri içermez).
+#
+# GÜVEN SINIRI — ÇÖZÜLMEMİŞ RİSK:
+#   pull_request olayında workflow dosyası (.github/workflows/ci.yml) ve bu betik PR'ın KENDİ içeriğinden
+#   çalıştırılır. GitHub zorunlu kontrolleri ADA göre eşleştirir. Bu yüzden .github/** veya tools/ci/**
+#   dosyalarını değiştiren bir PR (fork dahil) bu kontrolü devre dışı bırakabilir, gevşetebilir veya aynı
+#   adla "başarılı" bir iş üretebilir. Yukarıdaki kuralların HİÇBİRİ buna karşı koruma sağlamaz.
+#   Bu betiğin "kontrol dosyası değişti" uyarısı (pr kipi) yalnızca bilgilendirir: aynı PR o uyarıyı da
+#   kaldırabilir; bir kontrol DEĞİLDİR.
+#   gitleaks-full.yml varsayılan daldaki sürümle çalışır ve böyle bir PR'ın commit'lerini SONRADAN tespit
+#   edebilir; birleştirmeyi ENGELLEMEZ.
+#   Riski kapatmak depo ayarı ister (bu betiğin kapsamı dışında, değiştirilmedi): .github/** ve tools/ci/**
+#   için zorunlu kod sahibi incelemesi (CODEOWNERS + en az 1 onay), dış katkıcı workflow çalıştırma onayı,
+#   kuruluş düzeyinde zorunlu workflow. Mevcut kural seti PR ister ama 0 onay gerektirir; CODEOWNERS yok.
 #
 # Çıkış kodları: 0 temiz · 1 bulgu var · 2 tarama/girdi/yapılandırma hatası.
 set -Eeuo pipefail
@@ -28,10 +45,12 @@ unset GITLEAKS_CONFIG GITLEAKS_CONFIG_TOML
 
 EXPECTED_VERSION="8.28.0"
 die() { echo "::error::gitleaks-scan: $*" >&2; exit 2; }
+# Zorunlu ortam değişkeni: eksikse çıkış 2 (": ${X:?}" 1 ile çıkar ve "bulgu var" ile karışırdı).
+require() { [ -n "${!1:-}" ] || die "$1 gerekli${2:+ ($2)}"; }
 trap 'echo "::error::gitleaks-scan: beklenmeyen hata (satır $LINENO)" >&2; exit 2' ERR
 
-: "${GITLEAKS_BIN:?GITLEAKS_BIN gerekli}"
-: "${SCAN_MODE:?SCAN_MODE gerekli (pr|push|full)}"
+require GITLEAKS_BIN
+require SCAN_MODE
 REPO_DIR="$(cd "${REPO_DIR:-.}" && pwd)"
 WORK_DIR="${WORK_DIR:-${RUNNER_TEMP:-/tmp}}/gitleaks-scan.$$"
 
@@ -46,18 +65,24 @@ has_ref() { git -C "$REPO_DIR" rev-parse --verify -q "$1^{commit}" >/dev/null; }
 
 case "$SCAN_MODE" in
   pr)
-    : "${BASE_REF:?pr kipinde BASE_REF gerekli}"
-    : "${HEAD_SHA:?pr kipinde HEAD_SHA gerekli}"
+    require BASE_REF
+    require HEAD_SHA
+    require DEFAULT_BRANCH
     git check-ref-format --branch "$BASE_REF" >/dev/null 2>&1 || die "geçersiz hedef dal adı"
+    git check-ref-format --branch "$DEFAULT_BRANCH" >/dev/null 2>&1 || die "geçersiz varsayılan dal adı"
     is_sha "$HEAD_SHA" || die "geçersiz HEAD_SHA (40 karakterlik onaltılık SHA bekleniyor)"
     has_commit "$HEAD_SHA" || die "PR kaynak commit'i depoda yok: $HEAD_SHA"
-    trusted="refs/remotes/origin/$BASE_REF"
-    has_ref "$trusted" || die "hedef dal referansı yok: $trusted"
-    revs=("$trusted..$HEAD_SHA")
+    has_ref "refs/remotes/origin/$BASE_REF" || die "hedef dal referansı yok: refs/remotes/origin/$BASE_REF"
+    trusted="refs/remotes/origin/$DEFAULT_BRANCH"
+    has_ref "$trusted" || die "varsayılan dal referansı yok: $trusted"
+    revs=("refs/remotes/origin/$BASE_REF..$HEAD_SHA")
     policy_tips=("$HEAD_SHA")
     ;;
   push)
-    : "${EXPECTED_SHA:?push kipinde EXPECTED_SHA gerekli}"
+    require EXPECTED_SHA
+    require DEFAULT_BRANCH
+    require PUSH_REF
+    [ "$PUSH_REF" = "refs/heads/$DEFAULT_BRANCH" ] || die "push kipi yalnızca varsayılan dalda çalışır ($PUSH_REF)"
     is_sha "$EXPECTED_SHA" || die "geçersiz EXPECTED_SHA"
     head="$(git -C "$REPO_DIR" rev-parse --verify -q 'HEAD^{commit}')" || die "HEAD çözülemedi"
     [ "$head" = "$EXPECTED_SHA" ] || die "HEAD ($head) beklenen commit değil ($EXPECTED_SHA)"
@@ -66,7 +91,7 @@ case "$SCAN_MODE" in
     policy_tips=("$EXPECTED_SHA")
     ;;
   full)
-    : "${TRUSTED_REF:?full kipinde TRUSTED_REF gerekli}"
+    require TRUSTED_REF
     has_ref "$TRUSTED_REF" || die "güvenilir referans yok: $TRUSTED_REF"
     trusted="$TRUSTED_REF"
     revs=("--all")
@@ -89,9 +114,19 @@ done
 # Kapsam ve git ön denetimi: gitleaks'in çalıştıracağı git log aynı seçeneklerle hatasız çalışmalı.
 LOG_OPTS=(--remerge-diff --full-history "${revs[@]}")
 total="$(git -C "$REPO_DIR" rev-list --count "${revs[@]}")" || die "commit aralığı çözülemedi"
-content="$(git -C "$REPO_DIR" log --no-merges --diff-filter=AMRCT --format=%H "${revs[@]}" | wc -l)" || die "aralık okunamadı"
-git -C "$REPO_DIR" log -p -U0 "${LOG_OPTS[@]}" >/dev/null || die "git log ön denetimi başarısız"
-echo "Kapsam ($SCAN_MODE): ${revs[*]} — $total commit (içerik değiştiren, birleştirme dışı: $content)"
+echo "Kapsam ($SCAN_MODE): ${revs[*]} — $total commit"
+
+# Bilgilendirme (KONTROL DEĞİL — GÜVEN SINIRI): PR, bu taramayı yöneten dosyaları değiştiriyorsa sonuç
+# PR'ın kendi sürümüyle üretilmiştir; elle inceleme gerekir.
+if [ "$SCAN_MODE" = "pr" ]; then
+  mapfile -t ctl < <(git -C "$REPO_DIR" diff --name-only "refs/remotes/origin/$BASE_REF...$HEAD_SHA" -- \
+    .github tools/ci/gitleaks-scan.sh tools/ci/gitleaks-scan.test.sh .gitleaksignore .gitleaks.toml)
+  if [ "${#ctl[@]}" -gt 0 ]; then
+    msg="Bu PR gizli bilgi taramasını yöneten dosyaları değiştiriyor (${ctl[*]}). Bu kontrolün sonucu PR'ın KENDİ workflow/betik sürümüyle üretildi ve tek başına güvence DEĞİLDİR; değişiklik elle incelenmeli."
+    echo "::warning title=Güven sınırı::$msg"
+    printf '> ⚠️ **Güven sınırı:** %s\n\n' "$msg" >>"${GITHUB_STEP_SUMMARY:-/dev/null}"
+  fi
+fi
 echo "Güvenilir .gitleaksignore kaynağı: $trusted"
 
 # Çalışma ağacı olmayan kopya + nötr dizin + güvenilir ignore dosyası.
@@ -108,6 +143,34 @@ else
   : >"$ign"
 fi
 echo "Güvenilir ignore girdisi: $(grep -cvE '^\s*(#|$)' "$ign" || true)"
+
+# Beklenen en az taranacak commit sayısı (kısmi tarama denetimi). gitleaks 8.28.0 bir commit'i, o commit'in
+# silinmemiş dosyalarından en az bir parça (hunk) ürettiğinde sayar; silinen ve arşiv olmayan ikili dosyalar
+# sayılmaz, arşivler ayrıca sayılabilir. Burada gitleaks'in çalıştıracağı komutun AYNISI, tarama kopyası
+# üzerinde çalıştırılır ve en az bir silinmemiş metin parçası içeren commit'ler sayılır → alt sınır.
+# (--no-pager yalnızca çağrıyı ayırt etmek içindir; çıktıyı değiştirmez.) git hatası → iş başarısız.
+expected="$(set -o pipefail; git --no-pager -C "$WORK_DIR/scan.git" log -p -U0 "${LOG_OPTS[@]}" | python3 -c '
+import re, sys
+commit = re.compile(rb"^commit ([0-9a-f]{40})")
+seen, cur, in_file, deleted, hunk = set(), None, False, False, False
+def close_file():
+    if cur and in_file and hunk and not deleted:
+        seen.add(cur)
+for line in sys.stdin.buffer:
+    m = commit.match(line)
+    if m:
+        close_file(); cur, in_file, deleted, hunk = m.group(1), False, False, False
+    elif line.startswith(b"diff --git ") or line.startswith(b"diff --cc ") or line.startswith(b"diff --combined "):
+        close_file(); in_file, deleted, hunk = True, False, False
+    elif in_file and not hunk and line.startswith(b"deleted file mode"):
+        deleted = True
+    elif in_file and line.startswith(b"@@"):
+        hunk = True
+close_file()
+print(len(seen))
+')" || die "beklenen commit sayısı hesaplanamadı (git log başarısız)"
+[[ "$expected" =~ ^[0-9]+$ ]] || die "beklenen commit sayısı okunamadı"
+echo "Taranması gereken (en az): $expected commit"
 [ ! -e "$WORK_DIR/scan.git/.gitleaks.toml" ] && [ ! -e "$WORK_DIR/scan.git/.gitleaksignore" ] || die "tarama kopyası temiz değil"
 
 report="$WORK_DIR/report.json"
@@ -131,7 +194,10 @@ grep -qE '\[git\]|stderr is not empty|( ERR | FTL |level=error|level=fatal)' "$o
 [ "$rc" -eq 0 ] || [ "$rc" -eq 1 ] || die "gitleaks beklenmeyen çıkış kodu: $rc"
 scanned="$(grep -oE '[0-9]+ commits scanned' "$out" | grep -oE '^[0-9]+' | tail -1 || true)"
 [ -n "$scanned" ] || die "taranan commit sayısı okunamadı"
-if [ "$content" -gt 0 ] && [ "$scanned" -eq 0 ]; then die "aralıkta $content içerik commit'i var ama 0 commit tarandı"; fi
+# Kısmi tarama: gitleaks beklenenden AZ commit taradıysa (çıktı kesildi, ayrıştırıcı durdu, git akışı yarıda
+# bitti…) sonuç güvenilir değildir → başarısız. Fazlası (arşiv dosyaları) kabul edilir ama total'ı aşamaz.
+if [ "$scanned" -lt "$expected" ]; then die "kısmi tarama: $expected commit taranmalıydı, $scanned tarandı"; fi
+if [ "$scanned" -gt "$total" ]; then die "taranan commit ($scanned) kapsamdaki commit sayısını ($total) aşıyor"; fi
 [ -s "$report" ] || die "rapor dosyası yok"
 count="$(python3 - "$report" <<'PY'
 import json, sys
