@@ -145,6 +145,8 @@ jobs:
           GITLEAKS_BIN: ${{ runner.temp }}/gitleaks/gitleaks
           SCAN_MODE: ${{ github.event_name == 'pull_request' && 'pr' || 'push' }}
           BASE_REF: ${{ github.base_ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          PUSH_REF: ${{ github.ref }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           EXPECTED_SHA: ${{ github.sha }}
         run: bash tools/ci/gitleaks-scan.sh

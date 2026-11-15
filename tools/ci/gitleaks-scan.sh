@@ -17,8 +17,11 @@
 #   • .gitleaks.toml kullanımı yasaktır: taranan uçta bulunursa iş başarısız olur. Tarama ayrıca
 #     çalışma ağacı olmayan bir --mirror kopya üzerinde ve nötr bir dizinden yapılır; böylece PR'ın
 #     getirdiği .gitleaks.toml ve .gitleaksignore hiçbir zaman yüklenmez.
-#   • .gitleaksignore yalnızca GÜVENİLİR referanstan okunur: pr → hedef dal, push → HEAD (main),
-#     full → $TRUSTED_REF (varsayılan dal).
+#   • .gitleaksignore yalnızca KORUNAN VARSAYILAN DALDAN okunur ($DEFAULT_BRANCH; ör. main):
+#       pr   → refs/remotes/origin/$DEFAULT_BRANCH — PR'ın hedefi başka bir (korumasız) özellik dalı
+#              olsa bile o dalın ignore dosyasına GÜVENİLMEZ;
+#       push → varsayılan dala push edilen commit (yalnızca varsayılan dalda çalışır);
+#       full → $TRUSTED_REF (varsayılan dal; gitleaks-full.yml).
 #   • Gizli değerler hiçbir yerde yazılmaz: --redact; özet yalnızca kural, dosya, satır, commit ve
 #     parmak izini gösterir (parmak izi gizli değeri içermez).
 #
@@ -28,10 +31,12 @@ unset GITLEAKS_CONFIG GITLEAKS_CONFIG_TOML
 
 EXPECTED_VERSION="8.28.0"
 die() { echo "::error::gitleaks-scan: $*" >&2; exit 2; }
+# Zorunlu ortam değişkeni: eksikse çıkış 2 (": ${X:?}" 1 ile çıkar ve "bulgu var" ile karışırdı).
+require() { [ -n "${!1:-}" ] || die "$1 gerekli${2:+ ($2)}"; }
 trap 'echo "::error::gitleaks-scan: beklenmeyen hata (satır $LINENO)" >&2; exit 2' ERR
 
-: "${GITLEAKS_BIN:?GITLEAKS_BIN gerekli}"
-: "${SCAN_MODE:?SCAN_MODE gerekli (pr|push|full)}"
+require GITLEAKS_BIN
+require SCAN_MODE
 REPO_DIR="$(cd "${REPO_DIR:-.}" && pwd)"
 WORK_DIR="${WORK_DIR:-${RUNNER_TEMP:-/tmp}}/gitleaks-scan.$$"
 
@@ -46,18 +51,24 @@ has_ref() { git -C "$REPO_DIR" rev-parse --verify -q "$1^{commit}" >/dev/null; }
 
 case "$SCAN_MODE" in
   pr)
-    : "${BASE_REF:?pr kipinde BASE_REF gerekli}"
-    : "${HEAD_SHA:?pr kipinde HEAD_SHA gerekli}"
+    require BASE_REF
+    require HEAD_SHA
+    require DEFAULT_BRANCH
     git check-ref-format --branch "$BASE_REF" >/dev/null 2>&1 || die "geçersiz hedef dal adı"
+    git check-ref-format --branch "$DEFAULT_BRANCH" >/dev/null 2>&1 || die "geçersiz varsayılan dal adı"
     is_sha "$HEAD_SHA" || die "geçersiz HEAD_SHA (40 karakterlik onaltılık SHA bekleniyor)"
     has_commit "$HEAD_SHA" || die "PR kaynak commit'i depoda yok: $HEAD_SHA"
-    trusted="refs/remotes/origin/$BASE_REF"
-    has_ref "$trusted" || die "hedef dal referansı yok: $trusted"
-    revs=("$trusted..$HEAD_SHA")
+    has_ref "refs/remotes/origin/$BASE_REF" || die "hedef dal referansı yok: refs/remotes/origin/$BASE_REF"
+    trusted="refs/remotes/origin/$DEFAULT_BRANCH"
+    has_ref "$trusted" || die "varsayılan dal referansı yok: $trusted"
+    revs=("refs/remotes/origin/$BASE_REF..$HEAD_SHA")
     policy_tips=("$HEAD_SHA")
     ;;
   push)
-    : "${EXPECTED_SHA:?push kipinde EXPECTED_SHA gerekli}"
+    require EXPECTED_SHA
+    require DEFAULT_BRANCH
+    require PUSH_REF
+    [ "$PUSH_REF" = "refs/heads/$DEFAULT_BRANCH" ] || die "push kipi yalnızca varsayılan dalda çalışır ($PUSH_REF)"
     is_sha "$EXPECTED_SHA" || die "geçersiz EXPECTED_SHA"
     head="$(git -C "$REPO_DIR" rev-parse --verify -q 'HEAD^{commit}')" || die "HEAD çözülemedi"
     [ "$head" = "$EXPECTED_SHA" ] || die "HEAD ($head) beklenen commit değil ($EXPECTED_SHA)"
@@ -66,7 +77,7 @@ case "$SCAN_MODE" in
     policy_tips=("$EXPECTED_SHA")
     ;;
   full)
-    : "${TRUSTED_REF:?full kipinde TRUSTED_REF gerekli}"
+    require TRUSTED_REF
     has_ref "$TRUSTED_REF" || die "güvenilir referans yok: $TRUSTED_REF"
     trusted="$TRUSTED_REF"
     revs=("--all")
