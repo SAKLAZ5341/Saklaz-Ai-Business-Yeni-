@@ -126,9 +126,25 @@ function onSessionChange(): void {
   const live = $("live");
   if (live && session) live.replaceChildren(...liveContent());
 }
+function reconnectPanel(): Node | null {
+  if (!session?.stoppedReason) return null;
+  const why: Record<string, string> = {
+    HOST_DENIED: "Relay sunucusuna bağlanmaya izin vermediniz.",
+    CONSENT_REVOKED: "Ağ izinleri sıfırlandı; bağlantı kapatıldı.",
+    SOCKET_POLICY: "Relay adresi ağ politikasına uymuyor.",
+  };
+  const meta = session.meta;
+  return h(
+    "div",
+    { class: "card bad" },
+    h("p", {}, why[session.stoppedReason] ?? `Bağlantı durdu (${session.stoppedReason}).`),
+    h("button", { class: "btn", onclick: () => void activate(meta) }, "Yeniden bağlan (onay istenir)"),
+  );
+}
 function liveContent(): Node[] {
   if (!session) return [];
-  if (tab === "devices") return [devicesList(), pairingPanel()];
+  const rc = reconnectPanel();
+  if (tab === "devices") return [...(rc ? [rc] : []), devicesList(), pairingPanel()];
   if (tab === "command") return [tasksList()];
   return [];
 }
@@ -731,8 +747,14 @@ async function settingsTab(): Promise<Node> {
         {
           class: "btn secondary",
           onclick: async () => {
+            // 1. Oturum kapanır: yeniden bağlanma durur, relay soketi kapanır.
+            session?.close();
+            session = undefined;
+            // 2. Kabuk: onaylar silinir, açık bütün soketler kapanır, iptalden önce başlamış girişimler geçersiz.
             await host.clearConsents();
-            toast("Dış sunucu izinleri sıfırlandı; bir sonraki gönderimde yeniden sorulur.");
+            toast("Dış sunucu izinleri sıfırlandı ve bağlantı kapatıldı. Yeniden bağlanmak için yeni onay istenecek.");
+            // 3. Alan yeniden açılır: relay bağlantısı kabukta yeni onay ister.
+            await boot();
           },
         },
         "Ağ izinlerini sıfırla",

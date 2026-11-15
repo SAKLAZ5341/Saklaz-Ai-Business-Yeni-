@@ -64,4 +64,55 @@ void main() {
     expect(isRedirect(302), isTrue);
     expect(isRedirect(200), isFalse);
   });
+
+  group('WebSocket hedefi (kabukta açılır)', () {
+    test('yalnızca relay amacı ve ws/wss şeması', () {
+      expect(code(() => checkSocketTarget('wss://relay.ornek.com/v1/connect', 'relay', lanTest: false)), 'OK');
+      expect(code(() => checkSocketTarget('wss://relay.ornek.com/v1/connect', 'openai', lanTest: false)), 'PURPOSE_INVALID');
+      expect(code(() => checkSocketTarget('wss://relay.ornek.com', 'local-ai', lanTest: false)), 'PURPOSE_INVALID');
+      expect(code(() => checkSocketTarget('https://relay.ornek.com', 'relay', lanTest: false)), 'URL_SCHEME');
+      expect(code(() => checkSocketTarget('bozuk', 'relay', lanTest: false)), 'URL_INVALID');
+    });
+    test('HTTP ile aynı politika: açık metin, yasak hedef, kullanıcı bilgisi', () {
+      expect(code(() => checkSocketTarget('ws://relay.ornek.com', 'relay', lanTest: false)), 'CLEARTEXT_BLOCKED');
+      expect(code(() => checkSocketTarget('ws://relay.ornek.com', 'relay', lanTest: true)), 'CLEARTEXT_BLOCKED');
+      expect(code(() => checkSocketTarget('ws://192.168.1.20:8080', 'relay', lanTest: false)), 'CLEARTEXT_BLOCKED');
+      expect(code(() => checkSocketTarget('ws://192.168.1.20:8080', 'relay', lanTest: true)), 'OK');
+      expect(code(() => checkSocketTarget('wss://169.254.169.254', 'relay', lanTest: false)), 'TARGET_FORBIDDEN');
+      expect(code(() => checkSocketTarget('wss://u:p@relay.ornek.com', 'relay', lanTest: false)), 'URL_INVALID');
+    });
+    test('onay ve politika HTTP karşılığıyla: wss→https (relay API ile aynı onay anahtarı)', () {
+      final t = checkSocketTarget('wss://relay.ornek.com/v1/connect', 'relay', lanTest: false);
+      expect(t.policy.uri.scheme, 'https');
+      expect(t.policy.private, isFalse);
+      expect(t.socketUri.toString(), 'wss://relay.ornek.com/v1/connect');
+      expect(consentKey('personal', t.policy.uri), consentKey('personal', Uri.parse('https://relay.ornek.com/v1/auth/login')));
+    });
+  });
+
+  group('bağlantı sabitleme (yönlendirme ve vekil)', () {
+    final vetted = Uri.parse('https://relay.ornek.com/v1/connect');
+    test('aynı köken izinli', () {
+      expect(connectionAllowed(vetted, Uri.parse('https://relay.ornek.com/v1/connect'), null), isTrue);
+      expect(connectionAllowed(vetted, Uri.parse('https://RELAY.ornek.com:443/baska'), null), isTrue);
+    });
+    test('başka ana makine, bağlantı noktası, şema veya vekil reddedilir', () {
+      expect(connectionAllowed(vetted, Uri.parse('https://evil.ornek.com/v1/connect'), null), isFalse);
+      expect(connectionAllowed(vetted, Uri.parse('https://relay.ornek.com:8443/v1/connect'), null), isFalse);
+      expect(connectionAllowed(vetted, Uri.parse('http://relay.ornek.com/v1/connect'), null), isFalse);
+      expect(connectionAllowed(vetted, Uri.parse('https://192.168.1.1/'), null), isFalse);
+      expect(connectionAllowed(vetted, Uri.parse('https://relay.ornek.com/v1/connect'), 'proxy.local'), isFalse);
+    });
+  });
+
+  group('ağ izni dönemi (iptal)', () {
+    test('iptal, öncesinde başlamış girişimleri geçersiz kılar', () {
+      final e = ConsentEpoch();
+      final before = e.current;
+      expect(e.isCurrent(before), isTrue);
+      e.revoke();
+      expect(e.isCurrent(before), isFalse);
+      expect(e.isCurrent(e.current), isTrue);
+    });
+  });
 }

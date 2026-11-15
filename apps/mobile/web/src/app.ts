@@ -18,9 +18,10 @@ import {
   type PhoneState,
   type PresenceItem,
   type RelayState,
+  type WebSocketLike,
 } from "@saklaz/client-core";
 import type { InnerMessage, WireOut } from "@saklaz/protocol";
-import type { Host } from "./host.js";
+import { isTerminalClose, SOCKET_CLOSE, type Host } from "./host.js";
 import { isForbiddenHost, isPolicyCode, isPrivateHost } from "./netpolicy.js";
 
 export type ProfileKind = "personal" | "business";
@@ -181,10 +182,53 @@ export interface PairingProgress {
   error?: string;
 }
 
+const TERMINAL_CODE_NAMES: Record<number, string> = {
+  [SOCKET_CLOSE.CONSENT_REVOKED]: "CONSENT_REVOKED",
+  [SOCKET_CLOSE.HOST_DENIED]: "HOST_DENIED",
+  [SOCKET_CLOSE.POLICY]: "SOCKET_POLICY",
+};
+
+/**
+ * Relay soketi kabuk üzerinden açılır (hedef politikası + onay). Kabuk soketi onay iptali, onay reddi
+ * veya politika nedeniyle kapatırsa `onTerminal` çağrılır — RelayConnection'ın kapanış işleyicisinden
+ * ÖNCE; böylece bağlantı durdurulur ve yeniden bağlanma denenmez (kullanıcı eylemi gerekir).
+ */
+export function relaySocketFactory(host: Host, scope: ProfileKind, onTerminal: (code: string) => void): (url: string) => WebSocketLike {
+  return (url) => {
+    const inner = host.openSocket(url, { purpose: "relay", scope });
+    const outer: WebSocketLike = {
+      get readyState() {
+        return inner.readyState;
+      },
+      send: (d) => {
+        inner.send(d);
+      },
+      close: (c, r) => {
+        inner.close(c, r);
+      },
+      onopen: null,
+      onmessage: null,
+      onclose: null,
+      onerror: null,
+    };
+    inner.onopen = (ev) => outer.onopen?.(ev);
+    inner.onmessage = (ev) => outer.onmessage?.(ev);
+    inner.onerror = (ev) => outer.onerror?.(ev);
+    inner.onclose = (ev) => {
+      const code = (ev as { code?: number } | undefined)?.code ?? 1006;
+      if (isTerminalClose(code)) onTerminal(TERMINAL_CODE_NAMES[code] ?? String(code));
+      outer.onclose?.(ev);
+    };
+    return outer;
+  };
+}
+
 /** Etkin profil oturumu: relay bağlantısı, bilgisayarlar, komutlar. */
 export class Session {
   relayState: RelayState = "connecting";
   relayError: string | undefined;
+  /** Bağlantı kullanıcı eylemi gerektiren bir nedenle durdu (onay iptali/reddi, politika). */
+  stoppedReason: string | undefined;
   readonly presence = new Map<string, PresenceItem>();
   tasks: TaskView[] = [];
   pairing: PairingProgress | undefined;
@@ -203,6 +247,10 @@ export class Session {
     const tokens = new TokenManager(api, refresh, (t) => store.setSecret(meta.id, "refresh", t));
     this.conn = new RelayConnection({
       url: connectUrl(meta.relayUrl),
+      createSocket: relaySocketFactory(store.host, meta.kind, (code) => {
+        this.stoppedReason = code;
+        this.conn.stop();
+      }),
       deviceId: phone.id,
       sign: phone.sign,
       getToken: () => tokens.get(),
@@ -221,6 +269,12 @@ export class Session {
         this.onChange();
       },
       onState: (s, code) => {
+        if (this.stoppedReason) {
+          this.relayState = "error";
+          this.relayError = this.stoppedReason;
+          this.onChange();
+          return;
+        }
         this.relayState = s;
         this.relayError = code;
         if (s === "ready") this.queryPresence();
@@ -247,8 +301,10 @@ export class Session {
     return s;
   }
 
+  /** Oturumu kapatır: yeniden bağlanma durur, soket kapanır, zamanlayıcılar silinir. */
   close(): void {
     if (this.presenceTimer) clearInterval(this.presenceTimer);
+    this.presenceTimer = undefined;
     this.conn.stop();
   }
 

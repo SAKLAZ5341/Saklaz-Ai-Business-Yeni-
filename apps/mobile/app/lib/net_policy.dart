@@ -102,3 +102,43 @@ String consentKey(String scope, Uri uri) {
 }
 
 bool isRedirect(int status) => status >= 300 && status < 400;
+
+/// WebSocket hedefi: yalnızca relay amacı; wss (test yapısında özel ağdaki ws de). Politika ve onay,
+/// aynı kökenin HTTP karşılığıyla (wss→https, ws→http) değerlendirilir — relay API'si ile soketi tek onay.
+class SocketTarget {
+  SocketTarget(this.policy, this.socketUri);
+
+  /// Politika/onay için HTTP karşılığı (checkTarget sonucu).
+  final NetTarget policy;
+
+  /// Bağlanılacak ws/wss adresi.
+  final Uri socketUri;
+}
+
+SocketTarget checkSocketTarget(String url, String purpose, {required bool lanTest}) {
+  if (purpose != 'relay') throw PolicyError('PURPOSE_INVALID');
+  final uri = Uri.tryParse(url);
+  if (uri == null || !uri.hasScheme || uri.host.isEmpty) throw PolicyError('URL_INVALID');
+  final scheme = uri.scheme.toLowerCase();
+  if (scheme != 'wss' && scheme != 'ws') throw PolicyError('URL_SCHEME');
+  final policy = checkTarget(uri.replace(scheme: scheme == 'wss' ? 'https' : 'http').toString(), purpose, lanTest: lanTest);
+  return SocketTarget(policy, uri);
+}
+
+/// Bağlantı sabitleme: soket için açılan HER TCP bağlantısı (yönlendirme dahil) yalnızca politikadan ve
+/// onaydan geçmiş kökene (şema + ana makine + bağlantı noktası) gidebilir; vekil sunucu kullanılmaz.
+bool connectionAllowed(Uri vetted, Uri requested, String? proxyHost) {
+  if (proxyHost != null) return false;
+  return requested.scheme.toLowerCase() == vetted.scheme.toLowerCase() &&
+      requested.host.toLowerCase() == vetted.host.toLowerCase() &&
+      requested.port == vetted.port;
+}
+
+/// Ağ izni dönemi: "Ağ izinlerini sıfırla" dönemi artırır. İptalden ÖNCE başlamış bir onay penceresi veya
+/// bağlantı girişimi, tamamlandığında dönem değiştiği için geçersiz sayılır (onay yazılmaz, soket kapatılır).
+class ConsentEpoch {
+  int _value = 0;
+  int get current => _value;
+  void revoke() => _value++;
+  bool isCurrent(int epoch) => epoch == _value;
+}
