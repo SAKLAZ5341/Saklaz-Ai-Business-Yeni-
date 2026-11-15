@@ -56,7 +56,7 @@ jobs:
       - name: DPAPI yerel modülü derlemesi (A3)
         run: pnpm --filter @saklaz/win-keyprotect run build:native
       - run: pnpm --filter @saklaz/crypto --filter @saklaz/protocol --filter @saklaz/win-keyprotect --filter @saklaz/agent run test
-      - name: DPAPI kullanıcı izolasyonu — ikinci yerel kullanıcı (A3)
+      - name: DPAPI kullanıcı izolasyonu — ikinci standart yerel kullanıcı; Administrators yok, sınırlı yetki (A3)
         shell: pwsh
         run: ./tools/ci/dpapi-second-user.ps1
 
