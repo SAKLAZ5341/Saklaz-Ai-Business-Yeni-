@@ -16,7 +16,14 @@ const r = await build({
 });
 const js = r.outputFiles[0].text.replace(/<\/script/gi, "<\\/script");
 const css = readFileSync("src/style.css", "utf8");
-const html = readFileSync("src/index.html", "utf8").replace("/*CSS*/", css).replace("/*JS*/", () => js);
+let html = readFileSync("src/index.html", "utf8").replace("/*CSS*/", css).replace("/*JS*/", () => js);
+// Üretim (Android kabuğu): connect-src 'none' — WebView hiçbir ağ bağlantısı açamaz; HTTP ve WebSocket
+// yalnızca kabuk köprüsünden (hedef politikası + onay). Masaüstü tarayıcıda GÜVENSİZ geliştirme kipi için
+// SAKLAZ_WEB_DEV_INSECURE=1 ile ayrı bir dosya üretilir; bu dosya uygulama paketine KONULMAZ.
+if (!html.includes("connect-src 'none'")) throw new Error("CSP: connect-src 'none' bulunamadı");
+const dev = process.env.SAKLAZ_WEB_DEV_INSECURE === "1";
+const out = dev ? "dist/index.dev-insecure.html" : "dist/index.html";
+if (dev) html = html.replace("connect-src 'none'", "connect-src http: https: ws: wss:");
 mkdirSync("dist", { recursive: true });
-writeFileSync("dist/index.html", html);
-console.log(`dist/index.html ${(html.length / 1024).toFixed(0)} KB`);
+writeFileSync(out, html);
+console.log(`${out} ${(html.length / 1024).toFixed(0)} KB`);
