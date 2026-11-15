@@ -175,7 +175,7 @@ class _HostPageState extends State<HostPage> {
 
   Future<void> _ensureConsent(NetTarget t, String scope, String purpose, int epoch) {
     if (t.private) return Future.value(); // yerel ağ / loopback: cihazın ağından çıkmaz
-    final key = consentKey(scope, t.uri);
+    final key = consentKey(scope, purpose, t.uri);
     final run = _consentChain.then((_) async {
       if (!_epoch.isCurrent(epoch)) throw StateError('CONSENT_REVOKED');
       if (await _storage.read(key: key) == 'yes') return;
@@ -188,6 +188,7 @@ class _HostPageState extends State<HostPage> {
         builder: (ctx) => AlertDialog(
           title: Text(business ? 'KURUMSAL alan: dış sunucuya gönderim' : 'Dış sunucuya gönderim'),
           content: Text('${t.uri.scheme}://${t.uri.host}${t.uri.hasPort ? ':${t.uri.port}' : ''}\n\n'
+              '${_isShared(t.uri) ? 'Bu adres yerel ağ DEĞİL: operatör/VPN ortak ağı (100.64.0.0/10). ' : ''}'
               'Bu adrese $what gönderilecek. '
               '${business ? 'Kurumsal veri bu sunucuya gidebilir. ' : ''}'
               'İzin verirseniz bu alan için hatırlanır (Ayarlar → Ağ izinlerini sıfırla).'),
@@ -204,6 +205,11 @@ class _HostPageState extends State<HostPage> {
     });
     _consentChain = run.catchError((_) {});
     return run;
+  }
+
+  static bool _isShared(Uri u) {
+    final ip = InternetAddress.tryParse(u.host);
+    return ip != null && isSharedAddress(ip);
   }
 
   Future<Map<String, Object>> _request(Map<String, dynamic> a) async {

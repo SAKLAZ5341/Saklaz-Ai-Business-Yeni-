@@ -4,11 +4,15 @@
 // doğrular; arayüzdeki bir hata veya kötü niyetli içerik bu kuralları aşamaz.
 //   • Açık metin HTTP yalnızca yerel ağ TEST yapısında (SAKLAZ_LAN_TEST) ve yalnızca özel/loopback adreslere.
 //   • openai  → yalnızca https://api.openai.com
-//   • local-ai → yalnızca özel ağ / loopback IP adresleri veya "localhost" (ad çözümlemesiyle dışarı kaçış yok)
+//   • local-ai → yalnızca özel ağ / loopback IP adresleri veya "localhost" (ad çözümlemesiyle dışarı kaçış yok);
+//               ayrıca CGNAT (100.64.0.0/10, örn. VPN/operatör ağı) — ama yalnızca https ve AÇIK onayla
+//   • CGNAT özel ağ SAYILMAZ: başka abonelerle/VPN düğümleriyle paylaşılan bir aralıktır. Onaysız gönderim
+//     yok, açık metin (test yapısında bile) yok.
 //   • relay   → https (test yapısında özel ağdaki http de)
 //   • Hiçbir amaçta: kullanıcı bilgisi içeren adres, bağlantı-yerel / bulut meta veri (169.254/16),
 //     belirsiz (0.0.0.0, ::), çok noktaya yayın adresleri.
-//   • Özel ağ dışındaki her hedef, alan (kişisel/kurumsal) başına ayrı, AÇIK kullanıcı onayı ister.
+//   • Özel ağ dışındaki her hedef, alan (kişisel/kurumsal) VE amaç başına ayrı, AÇIK kullanıcı onayı ister:
+//     örn. relay için verilen onay, aynı adrese yapay zekâ isteği göndermeye izin vermez.
 import 'dart:io';
 
 /// Derleme zamanı bayrağı: `flutter build apk --dart-define=SAKLAZ_LAN_TEST=true`.
@@ -32,19 +36,24 @@ class NetTarget {
 const Set<String> kPurposes = {'relay', 'openai', 'local-ai'};
 const Set<String> kScopes = {'personal', 'business'};
 
-/// IPv4/IPv6 özel ağ ve loopback aralıkları (RFC 1918, RFC 6598 CGNAT, RFC 4193 ULA).
+/// IPv4/IPv6 özel ağ ve loopback aralıkları (RFC 1918, RFC 4193 ULA). CGNAT (RFC 6598) BURADA DEĞİL.
 bool isPrivateAddress(InternetAddress ip) {
   final b = ip.rawAddress;
   if (ip.type == InternetAddressType.IPv4) {
     if (b[0] == 10 || b[0] == 127) return true;
     if (b[0] == 172 && b[1] >= 16 && b[1] <= 31) return true;
     if (b[0] == 192 && b[1] == 168) return true;
-    if (b[0] == 100 && b[1] >= 64 && b[1] <= 127) return true;
     return false;
   }
   if (ip.isLoopback) return true;
   if ((b[0] & 0xfe) == 0xfc) return true; // fc00::/7
   return false;
+}
+
+/// CGNAT / paylaşılan adres alanı (RFC 6598, 100.64.0.0/10): özel ağ değildir; onay ister, açık metin yok.
+bool isSharedAddress(InternetAddress ip) {
+  final b = ip.rawAddress;
+  return ip.type == InternetAddressType.IPv4 && b[0] == 100 && b[1] >= 64 && b[1] <= 127;
 }
 
 /// Hiçbir amaçla kullanılamayacak adresler.
@@ -86,7 +95,8 @@ NetTarget checkTarget(String url, String purpose, {required bool lanTest}) {
       }
       break;
     case 'local-ai':
-      if (!private) throw PolicyError('TARGET_NOT_ALLOWED');
+      // CGNAT (VPN/operatör ağı) yerel AI için kullanılabilir ama özel ağ değildir: onay istenir.
+      if (!private && !(ip != null && isSharedAddress(ip))) throw PolicyError('TARGET_NOT_ALLOWED');
       break;
     case 'relay':
       break;
@@ -94,11 +104,14 @@ NetTarget checkTarget(String url, String purpose, {required bool lanTest}) {
   return NetTarget(uri, private: private);
 }
 
-/// Dış hedef için onay anahtarı: alan (kişisel/kurumsal) ve ana makine başına ayrı.
-String consentKey(String scope, Uri uri) {
+/// Dış hedef için onay anahtarı: alan (kişisel/kurumsal), AMAÇ (relay/openai/local-ai) ve köken başına ayrı.
+/// Eski biçimdeki ("consent:<alan>:<köken>") onaylar artık eşleşmez: yeniden sorulur (güvenli yön);
+/// "Ağ izinlerini sıfırla" her iki biçimi de siler ("consent:" öneki).
+String consentKey(String scope, String purpose, Uri uri) {
   if (!kScopes.contains(scope)) throw PolicyError('SCOPE_INVALID');
+  if (!kPurposes.contains(purpose)) throw PolicyError('PURPOSE_INVALID');
   final port = uri.hasPort ? ':${uri.port}' : '';
-  return 'consent:$scope:${uri.scheme}://${uri.host.toLowerCase()}$port';
+  return 'consent:$scope:$purpose:${uri.scheme}://${uri.host.toLowerCase()}$port';
 }
 
 bool isRedirect(int status) => status >= 300 && status < 400;

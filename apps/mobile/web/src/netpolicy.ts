@@ -17,17 +17,23 @@ function ipv4(host: string): number[] | undefined {
   return b.every((x) => x <= 255) ? b : undefined;
 }
 
-/** Özel ağ / loopback: 10/8, 172.16/12, 192.168/16, 127/8, 100.64/10, ::1, fc00::/7, "localhost". */
+/** Özel ağ / loopback: 10/8, 172.16/12, 192.168/16, 127/8, ::1, fc00::/7, "localhost". CGNAT DEĞİL. */
 export function isPrivateHost(hostname: string): boolean {
   const h = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (h === "localhost") return true;
   const b = ipv4(h);
   if (b) {
     const [a, c] = b as [number, number, number, number];
-    return a === 10 || a === 127 || (a === 172 && c >= 16 && c <= 31) || (a === 192 && c === 168) || (a === 100 && c >= 64 && c <= 127);
+    return a === 10 || a === 127 || (a === 172 && c >= 16 && c <= 31) || (a === 192 && c === 168);
   }
   if (h === "::1") return true;
   return /^f[cd][0-9a-f]{0,2}:/.test(h);
+}
+
+/** CGNAT / paylaşılan adres alanı (100.64.0.0/10): özel ağ değildir; kabuk onay ister, açık metin yok. */
+export function isSharedHost(hostname: string): boolean {
+  const b = ipv4(hostname.toLowerCase().replace(/^\[|\]$/g, ""));
+  return !!b && b[0] === 100 && (b[1] ?? 0) >= 64 && (b[1] ?? 0) <= 127;
 }
 
 export function isForbiddenHost(hostname: string): boolean {
@@ -37,7 +43,7 @@ export function isForbiddenHost(hostname: string): boolean {
   return h === "::" || /^fe[89ab][0-9a-f]?:/.test(h) || /^ff/.test(h) || h.startsWith("::ffff:");
 }
 
-/** Yerel AI adresi: yalnızca özel ağ / loopback; http yalnızca yerel ağ test yapısında. */
+/** Yerel AI adresi: özel ağ / loopback (ya da https ile CGNAT/VPN — kabuk onay ister); http yalnızca yerel ağ test yapısında ve özel ağa. */
 export function validateLocalAiUrl(url: string, lanTest: boolean): string {
   let u: URL;
   try {
@@ -48,7 +54,8 @@ export function validateLocalAiUrl(url: string, lanTest: boolean): string {
   if (u.username || u.password || u.hash) throw new Error("URL_INVALID");
   if (u.protocol !== "https:" && u.protocol !== "http:") throw new Error("URL_SCHEME");
   if (isForbiddenHost(u.hostname)) throw new Error("TARGET_FORBIDDEN");
-  if (!isPrivateHost(u.hostname)) throw new Error("TARGET_NOT_ALLOWED");
-  if (u.protocol === "http:" && !lanTest) throw new Error("CLEARTEXT_BLOCKED");
+  const priv = isPrivateHost(u.hostname);
+  if (!priv && !isSharedHost(u.hostname)) throw new Error("TARGET_NOT_ALLOWED");
+  if (u.protocol === "http:" && !(lanTest && priv)) throw new Error("CLEARTEXT_BLOCKED");
   return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, "")}`;
 }

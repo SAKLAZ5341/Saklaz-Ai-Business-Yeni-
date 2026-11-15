@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { AiError, aiErrorText, chat, defaultAiSettings, extractResponsesText, MODES } from "../src/ai.js";
 import { hostFetch, Store, validateRelay } from "../src/app.js";
 import type { Host, HttpContext, HttpResponse } from "../src/host.js";
-import { isForbiddenHost, isPrivateHost, validateLocalAiUrl } from "../src/netpolicy.js";
+import { isForbiddenHost, isPrivateHost, isSharedHost, validateLocalAiUrl } from "../src/netpolicy.js";
 
 class MemHost implements Host {
   readonly kind = "android" as const;
@@ -100,7 +100,13 @@ describe("Store: profil izolasyonu", () => {
 
 describe("ağ hedef kuralları (arayüz tarafı; asıl denetim kabukta)", () => {
   it("özel ağ ve yasak adresler", () => {
-    for (const h of ["10.1.2.3", "172.16.0.1", "172.31.255.255", "192.168.1.10", "127.0.0.1", "100.64.0.1", "localhost", "[::1]", "[fd12::1]"]) expect(isPrivateHost(h), h).toBe(true);
+    for (const h of ["10.1.2.3", "172.16.0.1", "172.31.255.255", "192.168.1.10", "127.0.0.1", "localhost", "[::1]", "[fd12::1]"]) expect(isPrivateHost(h), h).toBe(true);
+    // CGNAT (100.64.0.0/10) otomatik güvenilir değil: özel ağ sayılmaz, paylaşılan adres olarak ayrılır
+    for (const h of ["100.64.0.1", "100.100.100.100", "100.127.255.254"]) {
+      expect(isPrivateHost(h), h).toBe(false);
+      expect(isSharedHost(h), h).toBe(true);
+    }
+    for (const h of ["100.63.255.255", "100.128.0.1", "10.0.0.1"]) expect(isSharedHost(h), h).toBe(false);
     for (const h of ["8.8.8.8", "172.32.0.1", "api.openai.com", "ollama.ornek.com", "192.169.0.1"]) expect(isPrivateHost(h), h).toBe(false);
     for (const h of ["169.254.169.254", "0.0.0.0", "224.0.0.1", "[::]", "[fe80::1]", "[::ffff:169.254.169.254]"]) expect(isForbiddenHost(h), h).toBe(true);
     expect(isForbiddenHost("192.168.1.1")).toBe(false);
@@ -114,6 +120,12 @@ describe("ağ hedef kuralları (arayüz tarafı; asıl denetim kabukta)", () => 
     expect(() => validateLocalAiUrl("ftp://10.0.0.1/v1", true)).toThrow("URL_SCHEME");
     expect(() => validateLocalAiUrl("https://a:b@10.0.0.1/v1", true)).toThrow("URL_INVALID");
     expect(() => validateLocalAiUrl("bozuk", true)).toThrow("URL_INVALID");
+  });
+  it("CGNAT: yerel AI yalnızca https ile (kabuk onay ister); açık metin test yapısında bile yok; relay ws yok", () => {
+    expect(validateLocalAiUrl("https://100.101.2.3:11434/v1", false)).toBe("https://100.101.2.3:11434/v1");
+    expect(() => validateLocalAiUrl("http://100.101.2.3:11434/v1", true)).toThrow("CLEARTEXT_BLOCKED");
+    expect(() => validateRelay("ws://100.100.1.1:8080", true, true)).toThrow("RELAY_URL_NOT_LOCAL");
+    expect(validateRelay("wss://100.100.1.1", false)).toBe("wss://100.100.1.1");
   });
 });
 
