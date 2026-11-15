@@ -9,17 +9,20 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --coverage"
+    "test": "vitest run --coverage",
+    "build:probe": "node scripts/build-probe.mjs"
   },
   "dependencies": {
     "@saklaz/crypto": "workspace:*",
     "@saklaz/protocol": "workspace:*",
+    "@saklaz/win-keyprotect": "workspace:*",
     "better-sqlite3-multiple-ciphers": "12.11.1",
     "ws": "8.22.2"
   },
   "devDependencies": {
     "@saklaz/testkit": "workspace:*",
     "@types/better-sqlite3": "7.6.13",
-    "@types/ws": "8.18.2"
+    "@types/ws": "8.18.2",
+    "esbuild": "0.28.2"
   }
 }
