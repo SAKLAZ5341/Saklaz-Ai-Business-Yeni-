@@ -10,7 +10,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --coverage",
-    "build:dist": "node scripts/build-dist.mjs"
+    "build:dist": "node scripts/build-dist.mjs",
+    "build:probe": "node scripts/build-probe.mjs"
   },
   "dependencies": {
     "@saklaz/client-core": "workspace:*",

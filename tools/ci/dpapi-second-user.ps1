@@ -1,13 +1,15 @@
-﻿# SAKLAZ AI — DPAPI kullanıcı izolasyonu testi (Sprint 3 A3, test planı T-A3-22a).
+﻿# SAKLAZ AI — DPAPI kullanıcı izolasyonu testi (Sprint 3 A3, test planı T-A3-22a ve T-A3-22b).
 #
 # YALNIZCA GitHub Actions'ın geçici Windows sanal makinesinde çalışır (iş yönetici olarak koşar; kullanıcı
 # oluşturmak ve görev kaydetmek için gerekir). İkinci kullanıcı (B) STANDART kullanıcıdır.
-#   1. İş kullanıcısı (A): ham DPAPI blob'u (probe.mjs) oluşturur.
+#   1. İş kullanıcısı (A): ham DPAPI blob'u (probe.mjs) ve gerçek ProtectedKeyStore dosyası (kek.bin) oluşturur.
 #   2. Geçici, rastgele parolalı standart yerel kullanıcı B oluşturulur: yalnızca Users grubu; Administrators'a
 #      EKLENMEZ. Zamanlanmış görev için yalnızca "toplu iş olarak oturum açma" hakkı verilir.
-#   3. B adına (profili yüklenerek, sınırlı yetkiyle; /rl highest YOK) A'nın ham DPAPI blob'u açılmaya
-#      çalışılır → beklenen UNPROTECT_FAILED. B kendi blob'unu açabilmelidir (DPAPI B için çalışıyor;
-#      başarısızlığın nedeni izolasyondur). Sonunda A da kendi blob'unu hâlâ açabilmelidir.
+#   3. B adına (profili yüklenerek, sınırlı yetkiyle; /rl highest YOK) A'nın verileri açılmaya çalışılır:
+#        • ham DPAPI blob'u          → beklenen UNPROTECT_FAILED
+#        • gerçek kek.bin dosyası    → beklenen BINDING_MISMATCH (SID bağlama denetimi DPAPI'den önce)
+#      B kendi blob'unu ve kendi kek.bin dosyasını açabilmelidir (DPAPI B için çalışıyor; başarısızlığın
+#      nedeni izolasyondur). Sonunda A da kendi verilerini hâlâ açabilmelidir.
 #
 # Parola: yalnızca bu sürecin belleğinde. Hiçbir alt sürecin komut satırına, dosyaya veya günlüğe yazılmaz:
 # kullanıcı ADSI (süreç içi COM) ile, görev Register-ScheduledTask (süreç içi) ile oluşturulur; net.exe ve
@@ -19,10 +21,12 @@ if (-not $env:GITHUB_ACTIONS) { throw 'Bu betik yalnızca CI içindir (yerel kul
 $root  = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $kp    = Join-Path $root 'packages\win-keyprotect'
 $probe = Join-Path $kp 'scripts\probe.mjs'
+$ksprobe = Join-Path $kp 'dist\keystore-probe.mjs'
 $node  = (Get-Command node).Source
 $work  = Join-Path $env:RUNNER_TEMP ("dpapi-" + [guid]::NewGuid().ToString('N'))
 $user  = 'saklazdpapit2'
 $task  = 'saklaz-dpapi-izolasyon'
+if (-not (Test-Path $ksprobe)) { throw "keystore-probe paketi yok: önce 'pnpm --filter @saklaz/agent run build:probe'" }
 New-Item -ItemType Directory -Path $work | Out-Null
 
 Add-Type -TypeDefinition @'
@@ -74,8 +78,9 @@ $created = $false
 $sidB = $null
 $batchGranted = $false
 try {
-  # 1. A: ham DPAPI blob'u
+  # 1. A: ham blob ve gerçek kasa anahtarı dosyası
   Invoke-Native 'A: ham blob' { & $node $probe protect (Join-Path $work 'blob.bin') }
+  Invoke-Native 'A: kek.bin oluşturma' { & $node $ksprobe create (Join-Path $work 'kek-a.bin') }
   $sidA = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
 
   # 2. B: standart kullanıcı. Parola rastgele; yalnızca bellekte.
@@ -103,12 +108,14 @@ try {
   Invoke-Native 'Node okuma izni' { icacls (Split-Path $node) /grant "${user}:(OI)(CI)RX" /T /C /Q }
 
   $resBlob = Join-Path $work 'result-blob.json'
+  $resKs = Join-Path $work 'result-ks.json'
   $runCmd = Join-Path $work 'run-b.cmd'
   if ($runCmd -match '\s') { throw "Görev yolu boşluk içeriyor: $runCmd" }
   $log = Join-Path $work 'b.log'
   Set-Content -Path $runCmd -Encoding ascii -Value @(
     '@echo off',
-    "`"$node`" `"$probe`" cross `"$(Join-Path $work 'blob.bin')`" `"$resBlob`" > `"$log`" 2>&1"
+    "`"$node`" `"$probe`" cross `"$(Join-Path $work 'blob.bin')`" `"$resBlob`" > `"$log`" 2>&1",
+    "`"$node`" `"$ksprobe`" cross `"$(Join-Path $work 'kek-a.bin')`" `"$resKs`" `"$(Join-Path $work 'kek-b.bin')`" >> `"$log`" 2>&1"
   )
 
   # 4. Görev: B adına, parola ile (profil yüklenir), sınırlı yetki. Süreç içi kayıt: parola argv'de değil.
@@ -118,24 +125,29 @@ try {
   $pw = $null
   Start-ScheduledTask -TaskName $task
   $deadline = (Get-Date).AddSeconds(180)
-  while (-not (Test-Path $resBlob) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
-  if (-not (Test-Path $resBlob)) {
+  while (-not ((Test-Path $resBlob) -and (Test-Path $resKs)) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
+  if (-not ((Test-Path $resBlob) -and (Test-Path $resKs))) {
     $info = Get-ScheduledTaskInfo -TaskName $task
     $blog = if (Test-Path $log) { Get-Content $log -Raw } else { '(günlük yok)' }
     throw "B görevi sonuç üretmedi (LastTaskResult=$($info.LastTaskResult)). Günlük: $blog"
   }
   $rb = Get-Content $resBlob -Raw | ConvertFrom-Json
+  $rk = Get-Content $resKs -Raw | ConvertFrom-Json
   Write-Host ("A SID: {0}`nB SID: {1} (standart kullanıcı, Administrators üyesi değil)" -f $sidA, $sidB)
   Write-Host ("Ham DPAPI blob'u — B, A'nınkini çözebildi mi: {0} (kod: {1}); B kendi blob'unda: {2}" -f $rb.crossOk, $rb.crossCode, $rb.selfOk)
+  Write-Host ("ProtectedKeyStore — B, A'nın kek.bin'ini açabildi mi: {0} (kod: {1}); B kendi kek.bin'inde: {2}" -f $rk.crossOk, $rk.crossCode, $rk.selfOk)
 
-  if ($rb.sid -ne $sidB) { throw "B görevi beklenen kullanıcıyla çalışmadı ($($rb.sid))" }
-  if ($rb.crossOk) { throw 'GÜVENLİK HATASI: ikinci kullanıcı, birinci kullanıcının verisini açtı' }
+  foreach ($r in @($rb, $rk)) { if ($r.sid -ne $sidB) { throw "B görevi beklenen kullanıcıyla çalışmadı ($($r.sid))" } }
+  if ($rb.crossOk -or $rk.crossOk) { throw 'GÜVENLİK HATASI: ikinci kullanıcı, birinci kullanıcının verisini açtı' }
   if ($rb.crossCode -ne 'UNPROTECT_FAILED') { throw "Ham blob: beklenmeyen kod $($rb.crossCode)" }
+  if ($rk.crossCode -ne 'BINDING_MISMATCH') { throw "ProtectedKeyStore: beklenmeyen kod $($rk.crossCode)" }
   if (-not $rb.selfOk) { throw 'B kendi DPAPI blob''unu çözemedi; sonuç yorumlanamaz' }
+  if (-not $rk.selfOk) { throw "B kendi kek.bin dosyasını açamadı ($($rk.selfCode)); sonuç yorumlanamaz" }
 
-  # 5. A hâlâ kendi blob'unu açabiliyor
+  # 5. A hâlâ kendi verilerini açabiliyor
   Invoke-Native 'A: ham blob doğrulama' { & $node $probe verify (Join-Path $work 'blob.bin') }
-  Write-Host 'DPAPI kullanıcı izolasyonu (standart kullanıcı; ham blob): GEÇTİ'
+  Invoke-Native 'A: kek.bin doğrulama' { & $node $ksprobe verify (Join-Path $work 'kek-a.bin') }
+  Write-Host 'DPAPI kullanıcı izolasyonu (standart kullanıcı; ham blob + ProtectedKeyStore): GEÇTİ'
 }
 finally {
   $pw = $null
