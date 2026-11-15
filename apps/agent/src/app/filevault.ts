@@ -12,7 +12,8 @@
  *
  * Eşzamanlılık: kasa açıkken `vault.lock` dosyası tutulur (yalnızca bir süreç; aynı süreçte ikinci örnek
  * de reddedilir). Kilidi tutan süreç çökerse (aynı makinede, süreç artık yok) kilit eski sayılır ve
- * devralınır. Başka makineden gelen veya sahibi hâlâ çalışan kilit devralınmaz (VAULT_LOCKED).
+ * devralınır. Başka makineden gelen veya sahibi hâlâ çalışan kilit devralınmaz (VAULT_LOCKED). Atomik
+ * sahiplik kuralları VaultLock açıklamasındadır; kasa her yazımdan önce kilidin kendisinde olduğunu denetler.
  *
  * Yazım: benzersiz geçici dosya + fsync + yeniden adlandırma. Yazım başarısız olursa geçici dosya silinir,
  * diskteki kasa ve bellekteki değerler değişmeden kalır (VAULT_WRITE_FAILED).
@@ -21,7 +22,7 @@
  * dizgeleri (JSON metni, base64 değerler) değiştirilemez olduğundan sıfırlanamaz; bu bilinen bir sınırdır.
  */
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, existsSync, fsyncSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import type { SecretVault } from "../vault.js";
@@ -30,7 +31,7 @@ const MAGIC = Buffer.from("SKV1");
 /** Okunamayan/yarım kalmış kilit dosyası bu süreden eskiyse eski sayılır (sahibi yazarken çökmüş). */
 export const LOCK_UNREADABLE_STALE_MS = 30_000;
 
-export type VaultErrorCode = "VAULT_CORRUPT" | "VAULT_KEY" | "VAULT_LOCKED" | "VAULT_WRITE_FAILED" | "VAULT_CLOSED";
+export type VaultErrorCode = "VAULT_CORRUPT" | "VAULT_KEY" | "VAULT_LOCKED" | "VAULT_LOCK_LOST" | "VAULT_WRITE_FAILED" | "VAULT_CLOSED";
 
 export class VaultError extends Error {
   constructor(readonly code: VaultErrorCode) {
@@ -56,60 +57,64 @@ function processAlive(pid: number): boolean {
   }
 }
 
-/** Kasa kilidi. Dışa açık yalnızca testler içindir. */
+/** Kasa kilidi. Dışa açık yalnızca testler içindir.
+ *
+ * Sahiplik kuralları (atomiklik):
+ *  1. Oluşturma: içerik önce benzersiz geçici dosyaya yazılır ve fsync edilir, sonra `link()` ile kilit
+ *     adına bağlanır. link hedef varsa EEXIST ile başarısız olur → kilit dosyası ya TAM içerikle vardır ya
+ *     da yoktur (yarım yazılmış kilit penceresi yok). Dosya sistemi bağlantı desteklemiyorsa `wx` ile açıp
+ *     yazmaya düşülür (okunamayan kilit kuralı bu durum içindir).
+ *  2. Eski kilidin devralınması YALNIZCA devralma kilidi (`<kilit>.reclaim`, aynı link yöntemiyle) tutularak
+ *     yapılır ve silmeden hemen önce kilit dosyasının içeriği, eski olduğuna karar verilen içerikle BAYT
+ *     BAYT karşılaştırılır. Böylece iki süreç aynı eski kilidi görse bile ikincisi, birincinin yeni aldığı
+ *     kilidi silemez. Eski kilit varken başka hiçbir süreç yeni kilit oluşturamaz (link → EEXIST).
+ *  3. Bırakma: kilit yalnızca içindeki belirteç bu örneğinkiyse silinir. Canlı sahibin kilidini kural 2
+ *     gereği kimse devralamadığı için okuma ile silme arasında kilit el değiştiremez.
+ *  4. Çit (fencing): kasa her yazımdan önce `assertHeld()` ile kilidin hâlâ kendisinde olduğunu denetler;
+ *     değilse VAULT_LOCK_LOST (yazım yapılmaz).
+ * Sınır: PID yeniden kullanımı (sahibi çökmüş, aynı PID'i başka süreç almış) kilidi "canlı" gösterir →
+ * devralınmaz (güvenli yön: VAULT_LOCKED).
+ */
 export class VaultLock {
-  private constructor(
-    readonly path: string,
-    private readonly token: string,
-  ) {}
+  readonly path: string;
+  private readonly token: string;
+
+  private constructor(path: string, token: string) {
+    this.path = path;
+    this.token = token;
+  }
 
   static acquire(path: string, now: () => number = Date.now): VaultLock {
     mkdirSync(dirname(path), { recursive: true });
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       const info: LockInfo = { pid: process.pid, host: hostname(), token: randomBytes(16).toString("hex"), ts: now() };
-      let fd: number;
-      try {
-        fd = openSync(path, "wx", 0o600);
-      } catch (e) {
-        if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw new VaultError("VAULT_LOCKED");
-        if (attempt === 0 && VaultLock.isStale(path, now)) {
-          try {
-            unlinkSync(path);
-          } catch {
-            /* başka biri aynı anda devraldı; ikinci denemede EEXIST → kilitli */
-          }
-          continue;
-        }
-        throw new VaultError("VAULT_LOCKED");
-      }
-      try {
-        writeSync(fd, JSON.stringify(info));
-        fsyncSync(fd);
-      } finally {
-        closeSync(fd);
-      }
-      return new VaultLock(path, info.token);
+      if (createExclusive(path, Buffer.from(JSON.stringify(info), "utf8"))) return new VaultLock(path, info.token);
+      const seen = readOrUndefined(path);
+      if (seen === undefined) continue; // arada bırakıldı: yeniden dene
+      if (!VaultLock.isStaleContent(seen, path, now)) throw new VaultError("VAULT_LOCKED");
+      VaultLock.reclaimIfUnchanged(path, seen, now);
     }
     throw new VaultError("VAULT_LOCKED");
   }
 
   /** Eski kilit: aynı makinede ve sahibi süreç artık yok; ya da okunamıyor ve yeterince eski. */
   static isStale(path: string, now: () => number = Date.now): boolean {
-    let info: Partial<LockInfo>;
+    const seen = readOrUndefined(path);
+    return seen === undefined ? true : VaultLock.isStaleContent(seen, path, now);
+  }
+
+  private static isStaleContent(seen: Buffer, path: string, now: () => number): boolean {
+    let info: Partial<LockInfo> | undefined;
     try {
-      info = JSON.parse(readFileSync(path, "utf8")) as Partial<LockInfo>;
+      info = JSON.parse(seen.toString("utf8")) as Partial<LockInfo>;
     } catch {
+      info = undefined;
+    }
+    if (!info || typeof info.pid !== "number" || typeof info.host !== "string") {
       try {
         return now() - statSync(path).mtimeMs > LOCK_UNREADABLE_STALE_MS;
       } catch {
         return true; // dosya artık yok
-      }
-    }
-    if (typeof info.pid !== "number" || typeof info.host !== "string") {
-      try {
-        return now() - statSync(path).mtimeMs > LOCK_UNREADABLE_STALE_MS;
-      } catch {
-        return true;
       }
     }
     if (info.host !== hostname()) return false; // başka makinenin kilidi (paylaşılan klasör): devralınmaz
@@ -117,14 +122,123 @@ export class VaultLock {
     return !processAlive(info.pid);
   }
 
+  /**
+   * Eski kilidi, devralma kilidi altında ve içerik hâlâ `seen` ise siler. Devralma kilidi başkasındaysa
+   * (ve o da eski değilse) hiçbir şey yapmaz; çağıran yeniden dener veya VAULT_LOCKED alır.
+   * Dışa açık yalnızca testler içindir.
+   */
+  static reclaimIfUnchanged(path: string, seen: Buffer, now: () => number = Date.now): boolean {
+    const guard = `${path}.reclaim`;
+    const mine = Buffer.from(JSON.stringify({ pid: process.pid, host: hostname(), token: randomBytes(16).toString("hex"), ts: now() }), "utf8");
+    if (!createExclusive(guard, mine)) {
+      // Devralma kilidini tutan süreç çökmüş olabilir: aynı kurallarla, içerik doğrulanarak kaldırılır.
+      const g = readOrUndefined(guard);
+      if (g === undefined || !VaultLock.isStaleContent(g, guard, now)) return false;
+      removeIfUnchanged(guard, g);
+      if (!createExclusive(guard, mine)) return false;
+    }
+    try {
+      const current = readOrUndefined(path);
+      if (current === undefined || !current.equals(seen)) return false; // kilit değişti: dokunma
+      try {
+        unlinkSync(path);
+      } catch {
+        return false;
+      }
+      return true;
+    } finally {
+      removeIfUnchanged(guard, mine);
+    }
+  }
+
+  /** Kilit hâlâ bu örnekte mi? */
+  isHeld(): boolean {
+    const cur = readOrUndefined(this.path);
+    if (cur === undefined) return false;
+    try {
+      return (JSON.parse(cur.toString("utf8")) as Partial<LockInfo>).token === this.token;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Çit: kilit başkasına geçtiyse VAULT_LOCK_LOST. */
+  assertHeld(): void {
+    if (!this.isHeld()) throw new VaultError("VAULT_LOCK_LOST");
+  }
+
   /** Yalnızca kilit hâlâ bizimse siler (başkası devralmışsa dokunmaz). */
   release(): void {
+    if (!this.isHeld()) return;
     try {
-      const info = JSON.parse(readFileSync(this.path, "utf8")) as Partial<LockInfo>;
-      if (info.token === this.token) unlinkSync(this.path);
+      unlinkSync(this.path);
     } catch {
-      /* kilit yok veya okunamıyor: dokunma */
+      /* zaten yok */
     }
+  }
+}
+
+function readOrUndefined(path: string): Buffer | undefined {
+  try {
+    return readFileSync(path);
+  } catch {
+    return undefined;
+  }
+}
+
+/** İçerik hâlâ `expected` ise dosyayı siler (devralma kilidi temizliği). */
+function removeIfUnchanged(path: string, expected: Buffer): void {
+  const cur = readOrUndefined(path);
+  if (cur?.equals(expected)) {
+    try {
+      unlinkSync(path);
+    } catch {
+      /* zaten yok */
+    }
+  }
+}
+
+/**
+ * `path` yoksa `content` ile oluşturur (true); varsa false. Oluşturma atomiktir: geçici dosya + fsync +
+ * link. link desteklenmiyorsa (ör. bazı ağ/FAT dosya sistemleri) `wx` ile açıp yazmaya düşülür.
+ */
+function createExclusive(path: string, content: Buffer): boolean {
+  const tmp = `${path}.${randomBytes(8).toString("hex")}.tmp`;
+  try {
+    writeDurable(tmp, content);
+  } catch {
+    throw new VaultError("VAULT_LOCKED");
+  }
+  try {
+    linkSync(tmp, path);
+    return true;
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === "EEXIST") return false;
+    if (code !== "EPERM" && code !== "ENOTSUP" && code !== "ENOSYS" && code !== "EXDEV") throw new VaultError("VAULT_LOCKED");
+  } finally {
+    try {
+      unlinkSync(tmp);
+    } catch {
+      /* oluşmamış olabilir */
+    }
+  }
+  try {
+    writeDurable(path, content);
+    return true;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw new VaultError("VAULT_LOCKED");
+  }
+}
+
+function writeDurable(path: string, content: Buffer): void {
+  const fd = openSync(path, "wx", 0o600);
+  try {
+    writeSync(fd, content);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
   }
 }
 
@@ -226,6 +340,7 @@ export class EncryptedFileVault implements SecretVault {
   }
 
   private flush(next: Record<string, string>): void {
+    this.lock.assertHeld(); // çit: kilit başkasına geçtiyse yazma
     const nonce = randomBytes(12);
     const c = createCipheriv("aes-256-gcm", this.kek, nonce);
     c.setAAD(this.aad);

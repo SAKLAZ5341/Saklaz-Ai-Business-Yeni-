@@ -226,6 +226,7 @@ export async function main(argv: string[]): Promise<number> {
     const code = e instanceof Error && /^[A-Z_]{2,64}$/.test(e.message) ? e.message : e instanceof Error && "code" in e ? String((e as { code: unknown }).code) : "ERROR";
     log("error", "cli.failed", { cmd, code });
     if (code === "VAULT_LOCKED") console.error("Bu profilin kasası başka bir süreçte açık (ör. arka plan ajanı). Önce onu durdurun.");
+    else if (code === "VAULT_LOCK_LOST") console.error("Kasa kilidi bu süreçten alındı; değişiklik YAZILMADI. Diğer süreci kapatıp yeniden deneyin.");
     else console.error(`Hata: ${code}`);
     return 1;
   }
