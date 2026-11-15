@@ -15,8 +15,27 @@
 # kullanıcı ADSI (süreç içi COM) ile, görev Register-ScheduledTask (süreç içi) ile oluşturulur; net.exe ve
 # schtasks.exe KULLANILMAZ. Düz metin anahtar hiçbir yerde yazılmaz (yalnızca SHA-256 özetleri).
 # Temizlik "finally" içinde her durumda yapılır: görev, toplu iş hakkı, kullanıcı, kullanıcı profili, dosyalar.
+# Kullanıcı silme ve varlık sorgusunda YALNIZCA NERR_UserNotFound (0x800708AD) "kullanıcı yok" sayılır; erişim
+# reddi, RPC ve diğer COM hataları gizlenmez ve işi başarısız yapar (tools/ci/lib/AdsiUser.psm1). Bu sınıflandırmanın
+# Pester testleri (tools/ci/AdsiUser.Tests.ps1) kullanıcı oluşturulmadan ÖNCE burada çalıştırılır; biri bile
+# başarısızsa test başlamaz.
 $ErrorActionPreference = 'Stop'
 if (-not $env:GITHUB_ACTIONS) { throw 'Bu betik yalnızca CI içindir (yerel kullanıcı oluşturur).' }
+Import-Module (Join-Path $PSScriptRoot 'lib\AdsiUser.psm1') -Force
+
+# ADSI hata sınıflandırması testleri (Pester 5.7.1; CI'daki Pester işiyle aynı sürüm).
+$pester = Get-Module -ListAvailable Pester | Where-Object { $_.Version -eq [version]'5.7.1' } | Select-Object -First 1
+if (-not $pester) { Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser -SkipPublisherCheck }
+Import-Module Pester -RequiredVersion 5.7.1 -Force
+$pc = New-PesterConfiguration
+$pc.Run.Path = (Join-Path $PSScriptRoot 'AdsiUser.Tests.ps1')
+$pc.Run.PassThru = $true
+$pc.Output.Verbosity = 'Detailed'
+$pr = Invoke-Pester -Configuration $pc
+if ($pr.Result -ne 'Passed' -or $pr.FailedCount -gt 0 -or $pr.PassedCount -lt 1 -or $pr.SkippedCount -gt 0 -or $pr.NotRunCount -gt 0) {
+  throw ("ADSI sınıflandırma testleri başarısız: geçen {0}, başarısız {1}, atlanan {2}, çalışmayan {3}" -f $pr.PassedCount, $pr.FailedCount, $pr.SkippedCount, $pr.NotRunCount)
+}
+Write-Host ("ADSI sınıflandırma testleri (Pester): {0} geçti, 0 başarısız" -f $pr.PassedCount)
 
 $root  = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $kp    = Join-Path $root 'packages\win-keyprotect'
@@ -203,10 +222,21 @@ finally {
     }
   }
   if ($created) {
-    try { $computer.Delete('User', $user) } catch { }
-    # Kullanıcı yoksa ADSI "bulunamadı" istisnası atar: beklenen durum budur.
-    $still = try { [ADSI]::Exists("WinNT://$env:COMPUTERNAME/$user,user") } catch { $false }
-    if ($still) { $problems += 'kullanıcı' }
+    # Yalnızca NERR_UserNotFound "yok" sayılır; silme veya son sorgu başka bir hatayla başarısızsa (erişim reddi,
+    # RPC, diğer COM) hata gizlenmez: temizlik sorunu olarak raporlanır ve iş başarısız olur.
+    try {
+      $del = Resolve-AdsiUserDelete { $computer.Delete('User', $user) }
+      Write-Host "Geçici kullanıcı silme: $del"
+    } catch {
+      Write-Host "Geçici kullanıcı silinemedi: $($_.Exception.Message)"
+      $problems += "kullanıcı silme ($($_.Exception.Message))"
+    }
+    try {
+      if (Test-LocalUserExists -Computer $env:COMPUTERNAME -Name $user) { $problems += 'kullanıcı hâlâ var' }
+    } catch {
+      Write-Host "Geçici kullanıcı sorgulanamadı: $($_.Exception.Message)"
+      $problems += "kullanıcı sorgusu ($($_.Exception.Message))"
+    }
   }
   Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
   if (Test-Path $work) { $problems += 'çalışma klasörü' }
