@@ -56,9 +56,11 @@ echo "$SI_SHA:si.txt:stripe-access-token:1" >.gitleaksignore; echo "$SI_SHA:si.t
 git checkout -q -b histfix origin/clean; key >h.txt; commit "tarihsel anahtar"; H_SHA=$(git rev-parse HEAD); git rm -q h.txt; commit "kaldır"; git push -q origin histfix
 git checkout -q -b trustbase origin/main; { echo "# güvenilir girdi"; echo "$H_SHA:h.txt:stripe-access-token:1"; echo "$H_SHA:h.txt:generic-api-key:1"; } >.gitleaksignore; commit "güvenilir ignore"; git push -q origin trustbase
 
+# eski commit'te anahtar, en yeni commit temiz içerik: kesilen akış yalnızca temiz commit'i tarar
+git checkout -q -b oldsecret origin/clean; key >os.txt; commit "eski commit'te anahtar"; echo temiz-icerik >ok.txt; commit "en yeni commit temiz"; git push -q origin oldsecret
 git clone -q "$T/origin.git" "$T/ci" 2>/dev/null; cd "$T/ci"; git fetch -q origin '+refs/heads/*:refs/remotes/origin/*'
 sha() { git -C "$T/ci" rev-parse "refs/remotes/origin/$1"; }
-R=(REPO_DIR="$T/ci" SCAN_MODE=pr)
+R=(REPO_DIR="$T/ci" SCAN_MODE=pr DEFAULT_BRANCH=main)
 run "temiz PR" 0 "${R[@]}" BASE_REF=main HEAD_SHA="$(sha clean)"
 run "eklenip silinen anahtar" 1 "${R[@]}" BASE_REF=main HEAD_SHA="$(sha addrm)"
 run "çakışma çözümünde anahtar (birleştirme commit'i)" 1 "${R[@]}" BASE_REF=main HEAD_SHA="$(sha conflict)"
@@ -68,8 +70,11 @@ run "satır içi gitleaks:allow yok sayılır" 1 "${R[@]}" BASE_REF=main HEAD_SH
 run ".gitleaks.toml yasak" 2 "${R[@]}" BASE_REF=main HEAD_SHA="$(sha toml)"
 expect_in_last "gitleaks.toml kullanımı yasak"
 run "PR'ın kendi .gitleaksignore'u dikkate alınmaz" 1 "${R[@]}" BASE_REF=main HEAD_SHA="$(sha selfignore)"
-run "hedef daldaki güvenilir .gitleaksignore uygulanır" 0 "${R[@]}" BASE_REF=trustbase HEAD_SHA="$(sha histfix)"
-run "aynı commit, hedef dalda girdi yoksa yakalanır" 1 "${R[@]}" BASE_REF=main HEAD_SHA="$(sha histfix)"
+run "hedefi korumasız özellik dalı: o dalın .gitleaksignore'una GÜVENİLMEZ" 1 "${R[@]}" BASE_REF=trustbase HEAD_SHA="$(sha histfix)"
+expect_in_last "Güvenilir .gitleaksignore kaynağı: refs/remotes/origin/main"
+run "aynı commit, varsayılan dalda girdi yoksa yakalanır" 1 "${R[@]}" BASE_REF=main HEAD_SHA="$(sha histfix)"
+run "varsayılan dal adı verilmezse → hata" 2 REPO_DIR="$T/ci" SCAN_MODE=pr BASE_REF=main HEAD_SHA="$(sha clean)"
+run "varsayılan dal referansı yoksa → hata" 2 REPO_DIR="$T/ci" SCAN_MODE=pr DEFAULT_BRANCH=yok BASE_REF=main HEAD_SHA="$(sha clean)"
 run "boş aralık" 0 "${R[@]}" BASE_REF=main HEAD_SHA="$(sha main)"
 expect_in_last "— 0 commit"
 run "geçersiz SHA biçimi" 2 "${R[@]}" BASE_REF=main 'HEAD_SHA=x;id'
@@ -77,6 +82,15 @@ run "olmayan SHA" 2 "${R[@]}" BASE_REF=main HEAD_SHA=0123456789abcdef0123456789a
 run "olmayan hedef dal" 2 "${R[@]}" BASE_REF=yok HEAD_SHA="$(sha clean)"
 run "geçersiz hedef dal adı" 2 "${R[@]}" BASE_REF='../x' HEAD_SHA="$(sha clean)"
 run "bilinmeyen kip" 2 REPO_DIR="$T/ci" SCAN_MODE=baska
+run "SCAN_MODE verilmezse → hata (2, bulgu kodu 1 DEĞİL)" 2 REPO_DIR="$T/ci"
+run "HEAD_SHA verilmezse → hata (2)" 2 "${R[@]}" BASE_REF=main
+
+# Varsayılan dala (incelenmiş) ignore girdisi eklenince: hedef hangi dal olursa olsun uygulanır.
+cd "$T/dev"; git checkout -q main; git pull -q origin main 2>/dev/null || true
+{ echo "# varsayılan dalda güvenilir girdi"; echo "$H_SHA:h.txt:stripe-access-token:1"; echo "$H_SHA:h.txt:generic-api-key:1"; } >.gitleaksignore; commit "varsayılan dalda ignore"; git push -q origin main
+cd "$T/ci"; git fetch -q origin '+refs/heads/*:refs/remotes/origin/*'
+run "varsayılan daldaki güvenilir girdi uygulanır (hedef main)" 0 "${R[@]}" BASE_REF=main HEAD_SHA="$(sha histfix)"
+run "varsayılan daldaki güvenilir girdi uygulanır (hedef özellik dalı)" 0 "${R[@]}" BASE_REF=trustbase HEAD_SHA="$(sha histfix)"
 
 # ---------------------------------------------------------------- git hatası (fail-open denemesi)
 echo "git hatası:"
@@ -89,6 +103,8 @@ if [ "\$1" = "-C" ] && [[ "\$2" == *scan.git ]] && [ "\$3" = log ]; then
     fatal) echo "fatal: benzetilmiş git hatası" >&2; exit 128 ;;
     warn)  echo "error: benzetilmiş uyarı" >&2; exec "$REAL_GIT" "\$@" ;;
     empty) exit 0 ;;
+    # kısmi tarama: ilk commit'ten sonra çıktı sessizce kesilir (hata yok, stderr yok, çıkış 0)
+    truncate) "$REAL_GIT" "\$@" | awk '/^commit [0-9a-f]{40}/{n++; if (n > 1) exit} {print}'; exit 0 ;;
   esac
 fi
 exec "$REAL_GIT" "\$@"
@@ -97,7 +113,15 @@ chmod +x "$T/wrap/git"
 run "git ölümcül hata → başarısız" 2 PATH="$T/wrap:$PATH" GIT_SIM=fatal "${R[@]}" BASE_REF=main HEAD_SHA="$(sha addrm)"
 run "git stderr çıktısı → başarısız" 2 PATH="$T/wrap:$PATH" GIT_SIM=warn "${R[@]}" BASE_REF=main HEAD_SHA="$(sha addrm)"
 run "git boş çıktı (0 commit tarandı) → başarısız" 2 PATH="$T/wrap:$PATH" GIT_SIM=empty "${R[@]}" BASE_REF=main HEAD_SHA="$(sha clean)"
-expect_in_last "0 commit tarandı"
+expect_in_last "kısmi tarama: 1 commit taranmalıydı, 0 tarandı"
+# kısmi tarama: çok commit'li aralıkta yalnızca ilk commit taranır → başarısız (bulgu olan commit atlanmış olabilir)
+run "kısmi tarama (PR aralığı, ilk commit'ten sonra kesilen akış) → başarısız" 2 PATH="$T/wrap:$PATH" GIT_SIM=truncate "${R[@]}" BASE_REF=main HEAD_SHA="$(sha conflict)"
+expect_in_last "kısmi tarama: [0-9]+ commit taranmalıydı, 1 tarandı"
+run "kısmi tarama, anahtar atlanan commit'te: 'temiz' DEĞİL → başarısız" 2 PATH="$T/wrap:$PATH" GIT_SIM=truncate "${R[@]}" BASE_REF=main HEAD_SHA="$(sha histfix)"
+run "aynı aralık, kesilmeyen akış → yakalanır (karşılaştırma)" 1 "${R[@]}" BASE_REF=main HEAD_SHA="$(sha conflict)"
+run "kısmi tarama: 1 commit TARANDI ama anahtarlı eski commit atlandı → 'temiz' değil, başarısız" 2 PATH="$T/wrap:$PATH" GIT_SIM=truncate "${R[@]}" BASE_REF=main HEAD_SHA="$(sha oldsecret)"
+expect_in_last "kısmi tarama: 3 commit taranmalıydı, 1 tarandı"
+run "aynı aralık, kesilmeyen akış → anahtar yakalanır" 1 "${R[@]}" BASE_REF=main HEAD_SHA="$(sha oldsecret)"
 printf '#!/bin/sh\necho 8.0.0\n' >"$T/oldgl"; chmod +x "$T/oldgl"
 FAKE_BIN="$T/oldgl" run "yanlış gitleaks sürümü" 2 "${R[@]}" BASE_REF=main HEAD_SHA="$(sha clean)"
 
@@ -110,15 +134,17 @@ git init -q "$T/forkci"; cd "$T/forkci"; git remote add origin "$T/origin.git"
 git -c protocol.version=2 fetch -q --no-tags --prune --no-recurse-submodules origin '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*' "+$M_SHA:refs/remotes/pull/1/merge"
 git checkout -q --force refs/remotes/pull/1/merge
 if [ -z "$(git for-each-ref --contains "$F_SHA" refs/remotes/origin)" ] && [ "$(git rev-parse HEAD^2)" = "$F_SHA" ]; then pass=$((pass + 1)); echo "  ✓ kaynak SHA yalnızca birleştirme ref'inden erişilebilir (fork)"; else fail=$((fail + 1)); echo "  ✗ fork kurulumu beklenen gibi değil"; fi
-run "fork PR'ındaki anahtar yakalanır" 1 REPO_DIR="$T/forkci" SCAN_MODE=pr BASE_REF=main HEAD_SHA="$F_SHA"
+run "fork PR'ındaki anahtar yakalanır" 1 REPO_DIR="$T/forkci" SCAN_MODE=pr DEFAULT_BRANCH=main BASE_REF=main HEAD_SHA="$F_SHA"
 
 # ---------------------------------------------------------------- push kipi
 echo "push kipi:"
 git clone -q "$T/origin.git" "$T/pushci" 2>/dev/null; cd "$T/pushci"
-run "main tam geçmiş (main'deki anahtar)" 1 REPO_DIR="$T/pushci" SCAN_MODE=push EXPECTED_SHA="$(git rev-parse HEAD)"
-run "HEAD beklenen commit değil" 2 REPO_DIR="$T/pushci" SCAN_MODE=push EXPECTED_SHA="$(git rev-parse HEAD~1)"
+P=(REPO_DIR="$T/pushci" SCAN_MODE=push DEFAULT_BRANCH=main PUSH_REF=refs/heads/main)
+run "main tam geçmiş (main'deki anahtar)" 1 "${P[@]}" EXPECTED_SHA="$(git rev-parse HEAD)"
+run "HEAD beklenen commit değil" 2 "${P[@]}" EXPECTED_SHA="$(git rev-parse HEAD~1)"
+run "push kipi varsayılan dal dışında → hata" 2 REPO_DIR="$T/pushci" SCAN_MODE=push DEFAULT_BRANCH=main PUSH_REF=refs/heads/ozellik EXPECTED_SHA="$(git rev-parse HEAD)"
 git checkout -q -b clean-main "$(sha clean)"
-run "temiz geçmiş" 0 REPO_DIR="$T/pushci" SCAN_MODE=push EXPECTED_SHA="$(git rev-parse HEAD)"
+run "temiz geçmiş" 0 "${P[@]}" EXPECTED_SHA="$(git rev-parse HEAD)"
 
 # ---------------------------------------------------------------- full kipi (B2)
 echo "full kipi:"
