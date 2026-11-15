@@ -212,8 +212,9 @@ finally {
         Write-Host ("B adına süreç: " + $(if ($still) { ($still | ForEach-Object { "$($_.ProcessName)($($_.Id))" }) -join ', ' } else { 'yok' }))
         if ($prof.Loaded -and -not $still) {
           # Windows hizmeti kovanı açık tutuyor; profil yalnızca yeniden başlatmada boşalır. Geçici CI sanal
-          # makinesi iş sonunda yok edilir. Hesap silindiği için bu profille oturum açılamaz. Açıkça raporlanır.
-          Write-Warning "KALAN: geçici kullanıcının profili Windows tarafından yüklü tutuldu ve silinemedi ($($prof.LocalPath)); hesap silindi, VM iş sonunda yok edilir."
+          # makinesi iş sonunda yok edilir. Açıkça raporlanır. Bu noktada hesap HENÜZ silinmedi: silme ve son
+          # varlık sorgusu aşağıda yapılır; başarıyla doğrulanırsa sonuç en sondaki temizlik iletisinde yazılır.
+          Write-Warning "KALAN: geçici kullanıcının profili Windows tarafından yüklü tutuldu ve silinemedi ($($prof.LocalPath)); hesabın silinmesi aşağıda ayrıca doğrulanır, VM iş sonunda yok edilir."
           $profileLeft = $true
         } else {
           $problems += 'kullanıcı profili'
@@ -224,9 +225,9 @@ finally {
   if ($created) {
     # Yalnızca NERR_UserNotFound "yok" sayılır; silme veya son sorgu başka bir hatayla başarısızsa (erişim reddi,
     # RPC, diğer COM) hata gizlenmez: temizlik sorunu olarak raporlanır ve iş başarısız olur.
+    $del = $null
     try {
       $del = Resolve-AdsiUserDelete { $computer.Delete('User', $user) }
-      Write-Host "Geçici kullanıcı silme: $del"
     } catch {
       Write-Host "Geçici kullanıcı silinemedi: $($_.Exception.Message)"
       $problems += "kullanıcı silme ($($_.Exception.Message))"
@@ -241,9 +242,11 @@ finally {
   Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
   if (Test-Path $work) { $problems += 'çalışma klasörü' }
   if ($problems.Count -gt 0) { throw ("Temizlik tamamlanamadı: " + ($problems -join ', ')) }
+  # Buraya yalnızca silme ve son varlık sorgusu dahil bütün temizlik doğrulandıysa gelinir.
+  $userDone = if ($created) { "geçici kullanıcı (silme: $del; son sorgu: yok)" } else { 'geçici kullanıcı (oluşturulmamıştı)' }
   if ($profileLeft) {
-    Write-Host 'Temizlik doğrulandı: görev, toplu iş hakkı, geçici kullanıcı ve dosyalar kaldırıldı; kullanıcı profili YÜKLÜ KALDI (yukarıdaki uyarı)'
+    Write-Host "Temizlik doğrulandı: görev, toplu iş hakkı, $userDone ve dosyalar kaldırıldı; kullanıcı profili YÜKLÜ KALDI (yukarıdaki uyarı)"
   } else {
-    Write-Host 'Temizlik doğrulandı: görev, toplu iş hakkı, kullanıcı profili, geçici kullanıcı ve dosyalar kaldırıldı'
+    Write-Host "Temizlik doğrulandı: görev, toplu iş hakkı, kullanıcı profili, $userDone ve dosyalar kaldırıldı"
   }
 }
