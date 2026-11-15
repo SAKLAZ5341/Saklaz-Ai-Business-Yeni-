@@ -15,6 +15,7 @@
 # Temizlik "finally" içinde her durumda yapılır: görev, toplu iş hakkı, kullanıcı, kullanıcı profili, dosyalar.
 $ErrorActionPreference = 'Stop'
 if (-not $env:GITHUB_ACTIONS) { throw 'Bu betik yalnızca CI içindir (yerel kullanıcı oluşturur).' }
+Import-Module (Join-Path $PSScriptRoot 'lib\AdsiUser.psm1') -Force
 
 $root  = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $kp    = Join-Path $root 'packages\win-keyprotect'
@@ -191,10 +192,12 @@ finally {
     }
   }
   if ($created) {
-    try { $computer.Delete('User', $user) } catch { }
-    # Kullanıcı yoksa ADSI "bulunamadı" istisnası atar: beklenen durum budur.
-    $still = try { [ADSI]::Exists("WinNT://$env:COMPUTERNAME/$user,user") } catch { $false }
-    if ($still) { $problems += 'kullanıcı' }
+    # Yalnızca NERR_UserNotFound "kullanıcı yok" sayılır; diğer ADSI hataları (erişim reddi, RPC…) sorgunun
+    # yapılamadığı anlamına gelir ve temizliği başarısız yapar (tools/ci/lib/AdsiUser.psm1).
+    try { $del = Resolve-AdsiUserDelete { $computer.Delete('User', $user) }; Write-Host "Geçici kullanıcı silme: $del" }
+    catch { $problems += "kullanıcı silme ($($_.Exception.Message))" }
+    try { if (Test-LocalUserExists -Computer $env:COMPUTERNAME -Name $user) { $problems += 'kullanıcı hâlâ var' } }
+    catch { $problems += "kullanıcı sorgusu ($($_.Exception.Message))" }
   }
   Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
   if (Test-Path $work) { $problems += 'çalışma klasörü' }

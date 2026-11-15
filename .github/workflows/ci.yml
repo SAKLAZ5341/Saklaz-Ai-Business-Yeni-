@@ -227,7 +227,7 @@ jobs:
         run: |
           Import-Module Pester -RequiredVersion 5.7.1
           $c = New-PesterConfiguration
-          $c.Run.Path = 'tools/discovery/windows-envanter.Tests.ps1'
+          $c.Run.Path = @('tools/discovery/windows-envanter.Tests.ps1', 'tools/ci/AdsiUser.Tests.ps1')
           $c.Run.Exit = $true
           $c.Output.Verbosity = 'Detailed'
           Invoke-Pester -Configuration $c
