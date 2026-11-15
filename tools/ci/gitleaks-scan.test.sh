@@ -56,6 +56,8 @@ echo "$SI_SHA:si.txt:stripe-access-token:1" >.gitleaksignore; echo "$SI_SHA:si.t
 git checkout -q -b histfix origin/clean; key >h.txt; commit "tarihsel anahtar"; H_SHA=$(git rev-parse HEAD); git rm -q h.txt; commit "kaldır"; git push -q origin histfix
 git checkout -q -b trustbase origin/main; { echo "# güvenilir girdi"; echo "$H_SHA:h.txt:stripe-access-token:1"; echo "$H_SHA:h.txt:generic-api-key:1"; } >.gitleaksignore; commit "güvenilir ignore"; git push -q origin trustbase
 
+# eski commit'te anahtar, en yeni commit temiz içerik: kesilen akış yalnızca temiz commit'i tarar
+git checkout -q -b oldsecret origin/clean; key >os.txt; commit "eski commit'te anahtar"; echo temiz-icerik >ok.txt; commit "en yeni commit temiz"; git push -q origin oldsecret
 git clone -q "$T/origin.git" "$T/ci" 2>/dev/null; cd "$T/ci"; git fetch -q origin '+refs/heads/*:refs/remotes/origin/*'
 sha() { git -C "$T/ci" rev-parse "refs/remotes/origin/$1"; }
 R=(REPO_DIR="$T/ci" SCAN_MODE=pr DEFAULT_BRANCH=main)
@@ -101,6 +103,8 @@ if [ "\$1" = "-C" ] && [[ "\$2" == *scan.git ]] && [ "\$3" = log ]; then
     fatal) echo "fatal: benzetilmiş git hatası" >&2; exit 128 ;;
     warn)  echo "error: benzetilmiş uyarı" >&2; exec "$REAL_GIT" "\$@" ;;
     empty) exit 0 ;;
+    # kısmi tarama: ilk commit'ten sonra çıktı sessizce kesilir (hata yok, stderr yok, çıkış 0)
+    truncate) "$REAL_GIT" "\$@" | awk '/^commit [0-9a-f]{40}/{n++; if (n > 1) exit} {print}'; exit 0 ;;
   esac
 fi
 exec "$REAL_GIT" "\$@"
@@ -109,7 +113,15 @@ chmod +x "$T/wrap/git"
 run "git ölümcül hata → başarısız" 2 PATH="$T/wrap:$PATH" GIT_SIM=fatal "${R[@]}" BASE_REF=main HEAD_SHA="$(sha addrm)"
 run "git stderr çıktısı → başarısız" 2 PATH="$T/wrap:$PATH" GIT_SIM=warn "${R[@]}" BASE_REF=main HEAD_SHA="$(sha addrm)"
 run "git boş çıktı (0 commit tarandı) → başarısız" 2 PATH="$T/wrap:$PATH" GIT_SIM=empty "${R[@]}" BASE_REF=main HEAD_SHA="$(sha clean)"
-expect_in_last "0 commit tarandı"
+expect_in_last "kısmi tarama: 1 commit taranmalıydı, 0 tarandı"
+# kısmi tarama: çok commit'li aralıkta yalnızca ilk commit taranır → başarısız (bulgu olan commit atlanmış olabilir)
+run "kısmi tarama (PR aralığı, ilk commit'ten sonra kesilen akış) → başarısız" 2 PATH="$T/wrap:$PATH" GIT_SIM=truncate "${R[@]}" BASE_REF=main HEAD_SHA="$(sha conflict)"
+expect_in_last "kısmi tarama: [0-9]+ commit taranmalıydı, 1 tarandı"
+run "kısmi tarama, anahtar atlanan commit'te: 'temiz' DEĞİL → başarısız" 2 PATH="$T/wrap:$PATH" GIT_SIM=truncate "${R[@]}" BASE_REF=main HEAD_SHA="$(sha histfix)"
+run "aynı aralık, kesilmeyen akış → yakalanır (karşılaştırma)" 1 "${R[@]}" BASE_REF=main HEAD_SHA="$(sha conflict)"
+run "kısmi tarama: 1 commit TARANDI ama anahtarlı eski commit atlandı → 'temiz' değil, başarısız" 2 PATH="$T/wrap:$PATH" GIT_SIM=truncate "${R[@]}" BASE_REF=main HEAD_SHA="$(sha oldsecret)"
+expect_in_last "kısmi tarama: 3 commit taranmalıydı, 1 tarandı"
+run "aynı aralık, kesilmeyen akış → anahtar yakalanır" 1 "${R[@]}" BASE_REF=main HEAD_SHA="$(sha oldsecret)"
 printf '#!/bin/sh\necho 8.0.0\n' >"$T/oldgl"; chmod +x "$T/oldgl"
 FAKE_BIN="$T/oldgl" run "yanlış gitleaks sürümü" 2 "${R[@]}" BASE_REF=main HEAD_SHA="$(sha clean)"
 

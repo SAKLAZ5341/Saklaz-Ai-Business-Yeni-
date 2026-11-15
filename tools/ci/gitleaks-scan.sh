@@ -100,9 +100,7 @@ done
 # Kapsam ve git ön denetimi: gitleaks'in çalıştıracağı git log aynı seçeneklerle hatasız çalışmalı.
 LOG_OPTS=(--remerge-diff --full-history "${revs[@]}")
 total="$(git -C "$REPO_DIR" rev-list --count "${revs[@]}")" || die "commit aralığı çözülemedi"
-content="$(git -C "$REPO_DIR" log --no-merges --diff-filter=AMRCT --format=%H "${revs[@]}" | wc -l)" || die "aralık okunamadı"
-git -C "$REPO_DIR" log -p -U0 "${LOG_OPTS[@]}" >/dev/null || die "git log ön denetimi başarısız"
-echo "Kapsam ($SCAN_MODE): ${revs[*]} — $total commit (içerik değiştiren, birleştirme dışı: $content)"
+echo "Kapsam ($SCAN_MODE): ${revs[*]} — $total commit"
 echo "Güvenilir .gitleaksignore kaynağı: $trusted"
 
 # Çalışma ağacı olmayan kopya + nötr dizin + güvenilir ignore dosyası.
@@ -119,6 +117,34 @@ else
   : >"$ign"
 fi
 echo "Güvenilir ignore girdisi: $(grep -cvE '^\s*(#|$)' "$ign" || true)"
+
+# Beklenen en az taranacak commit sayısı (kısmi tarama denetimi). gitleaks 8.28.0 bir commit'i, o commit'in
+# silinmemiş dosyalarından en az bir parça (hunk) ürettiğinde sayar; silinen ve arşiv olmayan ikili dosyalar
+# sayılmaz, arşivler ayrıca sayılabilir. Burada gitleaks'in çalıştıracağı komutun AYNISI, tarama kopyası
+# üzerinde çalıştırılır ve en az bir silinmemiş metin parçası içeren commit'ler sayılır → alt sınır.
+# (--no-pager yalnızca çağrıyı ayırt etmek içindir; çıktıyı değiştirmez.) git hatası → iş başarısız.
+expected="$(set -o pipefail; git --no-pager -C "$WORK_DIR/scan.git" log -p -U0 "${LOG_OPTS[@]}" | python3 -c '
+import re, sys
+commit = re.compile(rb"^commit ([0-9a-f]{40})")
+seen, cur, in_file, deleted, hunk = set(), None, False, False, False
+def close_file():
+    if cur and in_file and hunk and not deleted:
+        seen.add(cur)
+for line in sys.stdin.buffer:
+    m = commit.match(line)
+    if m:
+        close_file(); cur, in_file, deleted, hunk = m.group(1), False, False, False
+    elif line.startswith(b"diff --git ") or line.startswith(b"diff --cc ") or line.startswith(b"diff --combined "):
+        close_file(); in_file, deleted, hunk = True, False, False
+    elif in_file and not hunk and line.startswith(b"deleted file mode"):
+        deleted = True
+    elif in_file and line.startswith(b"@@"):
+        hunk = True
+close_file()
+print(len(seen))
+')" || die "beklenen commit sayısı hesaplanamadı (git log başarısız)"
+[[ "$expected" =~ ^[0-9]+$ ]] || die "beklenen commit sayısı okunamadı"
+echo "Taranması gereken (en az): $expected commit"
 [ ! -e "$WORK_DIR/scan.git/.gitleaks.toml" ] && [ ! -e "$WORK_DIR/scan.git/.gitleaksignore" ] || die "tarama kopyası temiz değil"
 
 report="$WORK_DIR/report.json"
@@ -142,7 +168,10 @@ grep -qE '\[git\]|stderr is not empty|( ERR | FTL |level=error|level=fatal)' "$o
 [ "$rc" -eq 0 ] || [ "$rc" -eq 1 ] || die "gitleaks beklenmeyen çıkış kodu: $rc"
 scanned="$(grep -oE '[0-9]+ commits scanned' "$out" | grep -oE '^[0-9]+' | tail -1 || true)"
 [ -n "$scanned" ] || die "taranan commit sayısı okunamadı"
-if [ "$content" -gt 0 ] && [ "$scanned" -eq 0 ]; then die "aralıkta $content içerik commit'i var ama 0 commit tarandı"; fi
+# Kısmi tarama: gitleaks beklenenden AZ commit taradıysa (çıktı kesildi, ayrıştırıcı durdu, git akışı yarıda
+# bitti…) sonuç güvenilir değildir → başarısız. Fazlası (arşiv dosyaları) kabul edilir ama total'ı aşamaz.
+if [ "$scanned" -lt "$expected" ]; then die "kısmi tarama: $expected commit taranmalıydı, $scanned tarandı"; fi
+if [ "$scanned" -gt "$total" ]; then die "taranan commit ($scanned) kapsamdaki commit sayısını ($total) aşıyor"; fi
 [ -s "$report" ] || die "rapor dosyası yok"
 count="$(python3 - "$report" <<'PY'
 import json, sys
