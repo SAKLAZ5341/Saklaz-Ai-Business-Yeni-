@@ -125,6 +125,9 @@ jobs:
     # PR: yalnızca hedef dal (güncel uç) ile PR kaynak SHA'sı arasındaki commit'ler.
     # main'e push: main'in tüm geçmişi. Tüm dallar/etiketler/PR referansları: gitleaks-full.yml (haftalık).
     # Kurallar ve fail-closed denetimleri: tools/ci/gitleaks-scan.sh.
+    # GÜVEN SINIRI (çözülmemiş): pull_request olayında bu iş ve betik PR'ın kendi içeriğinden çalışır;
+    # .github/** veya tools/ci/** dosyalarını değiştiren bir PR bu kontrolü devre dışı bırakabilir ve aynı
+    # adla başarılı görünebilir. Kapatmak depo ayarı ister (CODEOWNERS + zorunlu onay); ayrıntı betik başında.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

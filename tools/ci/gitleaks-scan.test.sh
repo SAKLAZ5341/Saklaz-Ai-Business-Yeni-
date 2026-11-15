@@ -31,6 +31,7 @@ run() {
   else fail=$((fail + 1)); echo "  ✗ $name — çıkış $rc, beklenen $want, gizli değer sızıntısı: $leak"; sed 's/^/      /' "$outf"; fi
   LAST_OUT="$outf"
 }
+expect_not_in_last() { if grep -qE "$1" "$LAST_OUT"; then fail=$((fail + 1)); echo "  ✗   çıktıda OLMAMALIYDI: $1"; else pass=$((pass + 1)); echo "  ✓   çıktıda yok: $1"; fi; }
 expect_in_last() { if grep -qE "$1" "$LAST_OUT"; then pass=$((pass + 1)); echo "  ✓   çıktıda: $1"; else fail=$((fail + 1)); echo "  ✗   çıktıda yok: $1"; fi; }
 
 # ---------------------------------------------------------------- PR senaryoları
@@ -58,10 +59,15 @@ git checkout -q -b trustbase origin/main; { echo "# güvenilir girdi"; echo "$H_
 
 # eski commit'te anahtar, en yeni commit temiz içerik: kesilen akış yalnızca temiz commit'i tarar
 git checkout -q -b oldsecret origin/clean; key >os.txt; commit "eski commit'te anahtar"; echo temiz-icerik >ok.txt; commit "en yeni commit temiz"; git push -q origin oldsecret
+# taramayı yöneten dosyayı değiştiren PR (güven sınırı uyarısı)
+git checkout -q -b ctlchange origin/clean; mkdir -p .github/workflows; echo "name: x" >.github/workflows/ci.yml; commit "workflow değişikliği"; git push -q origin ctlchange
 git clone -q "$T/origin.git" "$T/ci" 2>/dev/null; cd "$T/ci"; git fetch -q origin '+refs/heads/*:refs/remotes/origin/*'
 sha() { git -C "$T/ci" rev-parse "refs/remotes/origin/$1"; }
 R=(REPO_DIR="$T/ci" SCAN_MODE=pr DEFAULT_BRANCH=main)
 run "temiz PR" 0 "${R[@]}" BASE_REF=main HEAD_SHA="$(sha clean)"
+expect_not_in_last "Güven sınırı"
+run "taramayı yöneten dosyayı değiştiren PR: uyarı görünür, sonucu DEĞİŞTİRMEZ (kontrol değil)" 0 "${R[@]}" BASE_REF=main HEAD_SHA="$(sha ctlchange)"
+expect_in_last "::warning title=Güven sınırı::.*\.github/workflows/ci\.yml.*tek başına güvence DEĞİLDİR"
 run "eklenip silinen anahtar" 1 "${R[@]}" BASE_REF=main HEAD_SHA="$(sha addrm)"
 run "çakışma çözümünde anahtar (birleştirme commit'i)" 1 "${R[@]}" BASE_REF=main HEAD_SHA="$(sha conflict)"
 run "temiz birleştirmeye gizlice eklenen dosya" 1 "${R[@]}" BASE_REF=main HEAD_SHA="$(sha evil)"

@@ -16,7 +16,8 @@
 #   • Satır içi "gitleaks:allow" yok sayılır (--ignore-gitleaks-allow).
 #   • .gitleaks.toml kullanımı yasaktır: taranan uçta bulunursa iş başarısız olur. Tarama ayrıca
 #     çalışma ağacı olmayan bir --mirror kopya üzerinde ve nötr bir dizinden yapılır; böylece PR'ın
-#     getirdiği .gitleaks.toml ve .gitleaksignore hiçbir zaman yüklenmez.
+#     getirdiği .gitleaks.toml ve .gitleaksignore yüklenmez — bu betik ve workflow DEĞİŞTİRİLMEDİĞİ sürece
+#     (aşağıdaki GÜVEN SINIRI).
 #   • .gitleaksignore yalnızca KORUNAN VARSAYILAN DALDAN okunur ($DEFAULT_BRANCH; ör. main):
 #       pr   → refs/remotes/origin/$DEFAULT_BRANCH — PR'ın hedefi başka bir (korumasız) özellik dalı
 #              olsa bile o dalın ignore dosyasına GÜVENİLMEZ;
@@ -24,6 +25,19 @@
 #       full → $TRUSTED_REF (varsayılan dal; gitleaks-full.yml).
 #   • Gizli değerler hiçbir yerde yazılmaz: --redact; özet yalnızca kural, dosya, satır, commit ve
 #     parmak izini gösterir (parmak izi gizli değeri içermez).
+#
+# GÜVEN SINIRI — ÇÖZÜLMEMİŞ RİSK:
+#   pull_request olayında workflow dosyası (.github/workflows/ci.yml) ve bu betik PR'ın KENDİ içeriğinden
+#   çalıştırılır. GitHub zorunlu kontrolleri ADA göre eşleştirir. Bu yüzden .github/** veya tools/ci/**
+#   dosyalarını değiştiren bir PR (fork dahil) bu kontrolü devre dışı bırakabilir, gevşetebilir veya aynı
+#   adla "başarılı" bir iş üretebilir. Yukarıdaki kuralların HİÇBİRİ buna karşı koruma sağlamaz.
+#   Bu betiğin "kontrol dosyası değişti" uyarısı (pr kipi) yalnızca bilgilendirir: aynı PR o uyarıyı da
+#   kaldırabilir; bir kontrol DEĞİLDİR.
+#   gitleaks-full.yml varsayılan daldaki sürümle çalışır ve böyle bir PR'ın commit'lerini SONRADAN tespit
+#   edebilir; birleştirmeyi ENGELLEMEZ.
+#   Riski kapatmak depo ayarı ister (bu betiğin kapsamı dışında, değiştirilmedi): .github/** ve tools/ci/**
+#   için zorunlu kod sahibi incelemesi (CODEOWNERS + en az 1 onay), dış katkıcı workflow çalıştırma onayı,
+#   kuruluş düzeyinde zorunlu workflow. Mevcut kural seti PR ister ama 0 onay gerektirir; CODEOWNERS yok.
 #
 # Çıkış kodları: 0 temiz · 1 bulgu var · 2 tarama/girdi/yapılandırma hatası.
 set -Eeuo pipefail
@@ -101,6 +115,18 @@ done
 LOG_OPTS=(--remerge-diff --full-history "${revs[@]}")
 total="$(git -C "$REPO_DIR" rev-list --count "${revs[@]}")" || die "commit aralığı çözülemedi"
 echo "Kapsam ($SCAN_MODE): ${revs[*]} — $total commit"
+
+# Bilgilendirme (KONTROL DEĞİL — GÜVEN SINIRI): PR, bu taramayı yöneten dosyaları değiştiriyorsa sonuç
+# PR'ın kendi sürümüyle üretilmiştir; elle inceleme gerekir.
+if [ "$SCAN_MODE" = "pr" ]; then
+  mapfile -t ctl < <(git -C "$REPO_DIR" diff --name-only "refs/remotes/origin/$BASE_REF...$HEAD_SHA" -- \
+    .github tools/ci/gitleaks-scan.sh tools/ci/gitleaks-scan.test.sh .gitleaksignore .gitleaks.toml)
+  if [ "${#ctl[@]}" -gt 0 ]; then
+    msg="Bu PR gizli bilgi taramasını yöneten dosyaları değiştiriyor (${ctl[*]}). Bu kontrolün sonucu PR'ın KENDİ workflow/betik sürümüyle üretildi ve tek başına güvence DEĞİLDİR; değişiklik elle incelenmeli."
+    echo "::warning title=Güven sınırı::$msg"
+    printf '> ⚠️ **Güven sınırı:** %s\n\n' "$msg" >>"${GITHUB_STEP_SUMMARY:-/dev/null}"
+  fi
+fi
 echo "Güvenilir .gitleaksignore kaynağı: $trusted"
 
 # Çalışma ağacı olmayan kopya + nötr dizin + güvenilir ignore dosyası.

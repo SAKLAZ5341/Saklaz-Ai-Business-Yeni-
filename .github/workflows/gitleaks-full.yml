@@ -4,7 +4,9 @@
 # "Gizli bilgi taraması (gitleaks)" işi engeller.
 #
 # Güven modeli: zamanlanmış ve elle başlatılan çalıştırmalar varsayılan daldaki bu dosyayla çalışır;
-# bir fork PR'ı bu taramayı değiştiremez. PR kodu çalıştırılmaz ve çalışma ağacına alınmaz:
+# açık bir PR (fork dahil) BU taramayı değiştiremez. Ancak bu tarama SONRADAN tespit eder, birleştirmeyi
+# engellemez: PR'daki "Gizli bilgi taraması (gitleaks)" işini PR'ın kendisi değiştirmişse (GÜVEN SINIRI,
+# tools/ci/gitleaks-scan.sh başı) zararlı içerik bu tarama koşmadan önce birleştirilmiş olabilir. PR kodu çalıştırılmaz ve çalışma ağacına alınmaz:
 # PR referansları yalnızca Git nesnesi olarak çekilir ve çalışma ağacı olmayan bir kopyada taranır.
 # .gitleaksignore yalnızca varsayılan daldan okunur. Kurallar: tools/ci/gitleaks-scan.sh.
 name: gitleaks-full
