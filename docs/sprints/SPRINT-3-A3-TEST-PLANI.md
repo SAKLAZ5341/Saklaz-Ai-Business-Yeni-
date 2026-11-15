@@ -1,19 +1,21 @@
 # Sprint 3 / A3 — Kasa v2 ve DPAPI: Test Planı
 
 > **Tarih:** 2026-11-14
-> **Durum:** Tam A3 test planı; ilk DPAPI/KEK dilimi PR #12'de uygulanmış ve henüz main'e birleştirilmemiştir. Bu nedenle tüm A3 testleri tamamlanmış sayılmaz.
+> **Durum:** Tam A3 test planı; ilk DPAPI/KEK dilimi PR #12 ile 2026-11-15'te main'e birleştirilmiştir (`77fcc4b`). Tüm A3 testleri tamamlanmış sayılmaz.
 > **Bağlı belge:** SPRINT-3-A3-TEKNIK-TASARIM.md
 
-## 0.1 Uygulama ve doğrulama durumu (2026-11-14)
+## 0.1 Uygulama ve doğrulama durumu (2026-11-15)
 
-- PR #12 açık ve birleştirilmemiştir. Windows CI'da gerçek DPAPI modülü derlenmiş; koruma/çözme testleri ve ikinci kullanıcıyla ham DPAPI blob testi çalışmıştır. PR #12'nin sekiz zorunlu kontrolü başarılıdır.
-- Mevcut ikinci kullanıcı betiği T-A3-22'nin yalnızca ham blob bölümünü kapsar. B kullanıcı Administrators grubuna eklenmektedir, görev `/rl highest` ile çalıştırılmaktadır ve parola `net user` / `schtasks /rp` süreç argümanlarına aktarılmaktadır. Bu yöntem standart kullanıcı ve kimlik bilgisi güvenliği kabul kriterlerini karşılamaz.
-- Betik gerçek `ProtectedKeyStore` (`kek.bin`) dosyasını açmayı denememektedir. `ProtectedKeyStore.load()` önce SID/MachineGuid bağlama özetini karşılaştırdığı için farklı kullanıcıda kasa dosyası testi için beklenen hata `BINDING_MISMATCH`; ham DPAPI blob testi için beklenen hata `UNPROTECT_FAILED` olmalıdır.
-- Bu nedenle T-A3-22'nin ham blob ve gerçek kasa dosyası alt testleri ayrı çalıştırılmalı; B standart kullanıcı olmalı ve parola hiçbir süreç komut satırına yazılmamalıdır. Tam kasa v2, atomik yazım, geçiş ve kilit kurtarma senaryoları henüz tamamlanmış kabul edilmez.
+- PR #12 2026-11-15'te main'e birleştirildi (`77fcc4b`). Main'in Windows CI işinde (ci çalıştırması `43691582340`) gerçek DPAPI modülü derleniyor; koruma/çözme testleri ve ikinci kullanıcı testi çalışıyor. Main'deki yedi zorunlu kontrol başarılı.
+- **T-A3-22, main'deki betikle (`tools/ci/dpapi-second-user.ps1`):** B **standart** kullanıcı (Administrators üyesi değil; denetleniyor), görev `RunLevel Limited`, parola hiçbir alt sürecin komut satırına yazılmıyor. Main CI günlüğü:
+  - T-A3-22a ham blob: `B, A'nınkini çözebildi mi: False (kod: UNPROTECT_FAILED); B kendi blob'unda: True`
+  - T-A3-22b ProtectedKeyStore: `B, A'nın kek.bin'ini açabildi mi: False (kod: BINDING_MISMATCH); B kendi kek.bin'inde: True`
+- 2026-11-14'te betik B'yi Administrators grubuna ekliyor, `/rl highest` kullanıyor, parolayı `net user` / `schtasks /rp` argümanlarına veriyor ve yalnızca ham blob'u sınıyordu; bu durum PR #12'nin birleşen sürümünde giderildi.
+- §4.2 kabul maddelerinden **henüz karşılanmayanlar** aşağıda (§4.2 "Main'deki durum") ayrıca listelenmiştir. Tam kasa v2, atomik yazım, geçiş ve kilit kurtarma senaryoları henüz tamamlanmış kabul edilmez.
 
 ## 1. İlkeler
 
-- Mevcut hiçbir test silinmez, atlanmaz veya gevşetilmez; kapsama eşikleri düşürülmez. `main`'de şu an Linux'ta 205, Windows'ta 148 test, Docker'da 13 test, Dart'ta 7 test ve Pester'da 8 test var.
+- Mevcut hiçbir test silinmez, atlanmaz veya gevşetilmez; kapsama eşikleri düşürülmez. `main`'de (`77fcc4b`, 2026-11-15, ci çalıştırması `43691582340`) Linux'ta 228 test geçiyor (14 yalnızca-Windows testi atlanıyor), Windows'ta 183 test geçiyor (2 atlanıyor), Docker'da 13, Dart'ta 7 ve Pester'da 8 test var. (2026-11-14'te `7a7742a` için verilen değerler: Linux 205, Windows 148.)
 - Kasa mantığı (dosya biçimi, AAD, atomik yazım, hata kodları) **Linux'ta da** test edilir. Bunun için yalnızca testte kullanılan bir `FakeProtector` vardır; böylece kapsama ölçümü eksik kalmaz.
 - Gerçek DPAPI ve yerel modül testleri yalnızca Windows'ta koşar. Windows CI'da bu testlerin **gerçekten koştuğu doğrulanır**: win32'de yerel modül yüklenemiyorsa test kırmızı olur, sessizce atlanmaz.
 - Her negatif test, hata kodunu ve **gizli değerin hiçbir çıktıda bulunmadığını** birlikte doğrular.
@@ -113,7 +115,7 @@ Mevcut "Windows — kripto, protokol ve ajan (SQLCipher yerel modülü)" işine 
 
 GitHub'ın Windows sanal makinesi geçicidir ve iş yönetici olarak çalışır; bu, test edilen B hesabının yönetici olması gerektiği anlamına gelmez.
 
-**Mevcut CI kapsamı ve sınırı:** PR #12 betiği A'nın ham DPAPI blob'unu oluşturur; farklı SID'li B hesabında `UNPROTECT_FAILED` bekler; B'nin kendi DPAPI gidiş-dönüşünü ve A'nın kendi blob'unu yeniden açmasını doğrular. Bu gerçek Windows DPAPI testidir, ancak B'yi Administrators grubuna eklediği ve parolayı `net user` / `schtasks /rp` argümanlarına verdiği için güvenli kabul testi değildir. Ayrıca `ProtectedKeyStore` dosyasını test etmez.
+**2026-11-14'teki CI kapsamı (tarihsel):** O zamanki PR #12 betiği yalnızca ham DPAPI blob'unu sınıyordu; B'yi Administrators grubuna ekliyor ve parolayı `net user` / `schtasks /rp` argümanlarına veriyordu. Bu nedenle güvenli kabul testi değildi.
 
 **Kabul testi şu şekilde yeniden uygulanmalıdır:**
 
@@ -125,7 +127,19 @@ GitHub'ın Windows sanal makinesi geçicidir ve iş yönetici olarak çalışır
 6. B kendi `kek.bin` dosyasını başarıyla açabilmelidir. Hiçbir sonuç dosyası KEK, blob veya düz metin içermemelidir.
 7. Geçici görev/süreç, kullanıcı ve klasör temizlenir; temizlik hataları gizlenmez.
 
-**Kabul kapısı:** Mevcut CI betiği bu koşullara göre düzeltilmeden T-A3-22 tamamlandı sayılmaz. Gerçek Windows 10/11 bilgisayar testi §5'te ayrıca zorunludur.
+**Main'deki durum (2026-11-15, `77fcc4b`):**
+
+| Madde | Durum |
+|---|---|
+| 1. Standart kullanıcı, yükseltilmiş görev yok | ✅ Users grubu; Administrators üyeliği denetleniyor; `RunLevel Limited` |
+| 2. Parola güvenli API ile; argüman/dosya/günlükte yok | ⚠️ Kısmen: argüman, dosya ve günlükte yok (ADSI + `Register-ScheduledTask` süreç içinde); ancak `SecureString` değil, betik belleğinde düz dizge |
+| 3. Profil yüklenerek, yalnızca gereken ACL | ✅ Zamanlanmış görev parola ile (profil yüklenir); çalışma klasörüne yazma, paket ve Node'a okuma izni |
+| 4. Ham blob alt testi | ✅ `UNPROTECT_FAILED`; B kendi blob'unu, A kendi blob'unu açabiliyor |
+| 5. Gerçek kasa dosyası alt testi | ⚠️ Kısmen: `BINDING_MISMATCH` doğrulanıyor; "dosyanın özeti değişmemelidir" maddesi dosya özeti olarak değil, A'nın aynı anahtarı yeniden açabilmesi (anahtar özeti) olarak doğrulanıyor |
+| 6. B kendi `kek.bin`'ini açabilir; sonuçlarda gizli değer yok | ✅ Sonuç dosyaları yalnızca SID, kod ve doğru/yanlış içeriyor |
+| 7. Temizlik; hatalar gizlenmez | ⚠️ Kısmen: görev, toplu iş hakkı, kullanıcı ve dosya temizliği doğrulanıyor; ancak ADSI kullanıcı sorgusu her hatayı "kullanıcı yok" sayıyor (düzeltmesi yalnızca PR #13 dalına yönelik #19'da) ve Windows'un yüklü tuttuğu profil hata değil uyarı olarak raporlanıyor |
+
+**Kabul kapısı:** 2, 5 ve 7. maddeler tam karşılanmadan T-A3-22 CI kabulü tamamlandı sayılmaz. Gerçek Windows 10/11 bilgisayar testi §5'te ayrıca zorunludur.
 
 ## 5. Gerçek Windows bilgisayarında doğrulama
 
