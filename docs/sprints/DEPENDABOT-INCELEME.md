@@ -24,7 +24,7 @@ Bu bölüm, aşağıdaki 2026-11-13 tarihli tarihsel incelemedeki durum tablolar
 
 **K5 koruması:** Ruleset `27197647` aktif; strict required checks açık, yedi zorunlu kontrol, yalnızca merge yöntemi, bypass aktörü yok. CodeQL güvenlik eşiği medium-or-higher, alert eşiği errors. Kural/ayar gevşetilmedi.
 
-**PR #11 durumu (2026-11-17):** Head `c784381` olan `docs/s3-a3-plan` dalı güncel main `ddbe7a2`'nin 27 commit gerisinde ve 7 commit ilerisindedir (ortak taban `0cd9bec`). PR #26 (`fix/pr11-10-belge-guncelleme`, head `48c68be`) bu dala 1 commit ekler ve yalnızca üç Markdown dosyasını değiştirir; ancak belgeler hâlâ `77fcc4b` ara main durumunu anlatır ve PR #27'yi içermediği için güncellenmelidir.
+**PR #11 durumu (2026-11-17):** Head `c784381` olan `docs/s3-a3-plan` dalı güncel main `ddbe7a2`'nin 27 commit gerisinde ve 7 commit ilerisindedir (ortak taban `0cd9bec`). PR #26 (`fix/pr11-10-belge-guncelleme`) yalnızca üç Markdown dosyasını değiştirir; ancak belgeler hâlâ `77fcc4b` ara main durumunu anlatır ve PR #27'yi içermediği için güncellenmelidir.
 
 **PR #11'in merge-base diff'indeki Markdown dışı dosya:** `.gitleaksignore`, PR #11 head `c784381` ve güncel main `ddbe7a2` üzerinde byte-for-byte aynıdır; bu nedenle güncel main'e göre yeni bir ignore girdisi değişikliği değildir. Dosyadaki tek fingerprint (`d2591873…:apps/agent/test/mvp-app.test.ts:generic-api-key:150`) sentetik test yer tutucusu için belgelenmiştir; credential değeri bu belgede yer almaz. Main dosyasındaki yorum proje sahibi onayını 2026-11-14 olarak kaydeder; bu denetim onayı bağımsız olarak doğrulamaz. PR #11'in gerçek yeni içeriği üç Markdown belgesidir. Strict ruleset nedeniyle PR, güncel main tabanına göre yeniden doğrulanmadan birleştirilemez.
 
