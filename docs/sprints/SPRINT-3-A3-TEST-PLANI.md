@@ -1,12 +1,12 @@
 # Sprint 3 / A3 — Kasa v2 ve DPAPI: Test Planı
 
 > **Tarih:** 2026-11-14
-> **Durum:** Tam A3 test planı; ilk DPAPI/KEK dilimi PR #12 ile 2026-11-15'te main'e birleştirilmiştir (`77fcc4b`). Tüm A3 testleri tamamlanmış sayılmaz.
+> **Durum:** Tam A3 test planı; DPAPI/KEK ilk dilimi PR #12 (`77fcc4b`) ve ADSI hata ayrımı PR #27 (`ddbe7a2`) ile main'e birleştirilmiştir. Tüm A3 testleri tamamlanmış sayılmaz.
 > **Bağlı belge:** SPRINT-3-A3-TEKNIK-TASARIM.md
 
-## 0.1 Uygulama ve doğrulama durumu (2026-11-15)
+## 0.1 Uygulama ve doğrulama durumu (2026-11-17)
 
-- PR #12 2026-11-15'te main'e birleştirildi (`77fcc4b`). Main'in Windows CI işinde (ci çalıştırması `43691582340`) gerçek DPAPI modülü derleniyor; koruma/çözme testleri ve ikinci kullanıcı testi çalışıyor. Main'deki yedi zorunlu kontrol başarılı.
+- PR #12 2026-11-15'te main'e birleştirildi (`77fcc4b`). Güncel main `ddbe7a2` için CI `43716748179`, push CodeQL `43716748119` ve zamanlanmış CodeQL `43857548628` başarılıdır. Windows Server 2022 işinde gerçek DPAPI modülü, standart ikinci kullanıcı ve gerçek `ProtectedKeyStore` (`kek.bin`) çapraz-kullanıcı testi çalışır.
 - **T-A3-22, main'deki betikle (`tools/ci/dpapi-second-user.ps1`):** B **standart** kullanıcı (Administrators üyesi değil; denetleniyor), görev `RunLevel Limited`, parola hiçbir alt sürecin komut satırına yazılmıyor. Main CI günlüğü:
   - T-A3-22a ham blob: `B, A'nınkini çözebildi mi: False (kod: UNPROTECT_FAILED); B kendi blob'unda: True`
   - T-A3-22b ProtectedKeyStore: `B, A'nın kek.bin'ini açabildi mi: False (kod: BINDING_MISMATCH); B kendi kek.bin'inde: True`
@@ -15,7 +15,7 @@
 
 ## 1. İlkeler
 
-- Mevcut hiçbir test silinmez, atlanmaz veya gevşetilmez; kapsama eşikleri düşürülmez. `main`'de (`77fcc4b`, 2026-11-15, ci çalıştırması `43691582340`) Linux'ta 228 test geçiyor (14 yalnızca-Windows testi atlanıyor), Windows'ta 183 test geçiyor (2 atlanıyor), Docker'da 13, Dart'ta 7 ve Pester'da 8 test var. (2026-11-14'te `7a7742a` için verilen değerler: Linux 205, Windows 148.)
+- Mevcut hiçbir test silinmez, atlanmaz veya gevşetilmez; kapsama eşikleri düşürülmez. Güncel main `ddbe7a2` CI `43716748179` üzerinde Linux'ta 228 test geçer (14 Windows'a özgü test atlanır), Windows'ta 183 test geçer (2 atlanır), Docker'da 13, Dart'ta 7, Windows envanter Pester işinde 8 ve DPAPI/ADSI adımında 10 test geçer. ADSI 10/10 testleri `tools/ci/dpapi-second-user.ps1` içinde, zorunlu Windows ajan işinde çalışır; ayrı Pester işi yalnızca envanter testlerini (8/8) çalıştırır. 2026-11-14 `7a7742a` sayıları tarihsel tabandır: Linux 205, Windows 148.
 - Kasa mantığı (dosya biçimi, AAD, atomik yazım, hata kodları) **Linux'ta da** test edilir. Bunun için yalnızca testte kullanılan bir `FakeProtector` vardır; böylece kapsama ölçümü eksik kalmaz.
 - Gerçek DPAPI ve yerel modül testleri yalnızca Windows'ta koşar. Windows CI'da bu testlerin **gerçekten koştuğu doğrulanır**: win32'de yerel modül yüklenemiyorsa test kırmızı olur, sessizce atlanmaz.
 - Her negatif test, hata kodunu ve **gizli değerin hiçbir çıktıda bulunmadığını** birlikte doğrular.
@@ -96,7 +96,7 @@
 | T-A3-52 | `vault migrate` her adımda kesilirse (çökme enjeksiyonu) | Eski dosya **hiçbir durumda** kaybolmaz veya değişmez; yarım yeni dosya temizlenir |
 | T-A3-53 | `vault migrate`, `SAKLAZ_INSECURE_VAULT=1` olmadan | Reddedilir |
 | T-A3-54 | `SecretVault` arayüzü | Değişmemiş (tip testi); `MemoryVault` ve `InsecureFileVault` testleri aynen geçer |
-| T-A3-55 | **Bütün mevcut testler** (Linux 205, Windows 148, Docker 13, Dart 7, Pester 8) | Hepsi geçer; sayılar azalmaz |
+| T-A3-55 | **Bütün mevcut testler** (Linux 228, Windows 183, Docker 13, Dart 7, envanter Pester 8, ADSI Pester 10) | Hepsi geçer; sayılar azalmaz |
 | T-A3-56 | Protokol vektörleri ve kripto paketi | Bayt bayt değişmemiş (`git diff` boş; vektör sapma testi) |
 
 ## 4. Windows CI ayrıntıları
@@ -127,7 +127,7 @@ GitHub'ın Windows sanal makinesi geçicidir ve iş yönetici olarak çalışır
 6. B kendi `kek.bin` dosyasını başarıyla açabilmelidir. Hiçbir sonuç dosyası KEK, blob veya düz metin içermemelidir.
 7. Geçici görev/süreç, kullanıcı ve klasör temizlenir; temizlik hataları gizlenmez.
 
-**Main'deki durum (2026-11-15, `77fcc4b`):**
+**Main'deki durum (2026-11-17, `ddbe7a2`):**
 
 | Madde | Durum |
 |---|---|
@@ -137,7 +137,7 @@ GitHub'ın Windows sanal makinesi geçicidir ve iş yönetici olarak çalışır
 | 4. Ham blob alt testi | ✅ `UNPROTECT_FAILED`; B kendi blob'unu, A kendi blob'unu açabiliyor |
 | 5. Gerçek kasa dosyası alt testi | ⚠️ Kısmen: `BINDING_MISMATCH` doğrulanıyor; "dosyanın özeti değişmemelidir" maddesi dosya özeti olarak değil, A'nın aynı anahtarı yeniden açabilmesi (anahtar özeti) olarak doğrulanıyor |
 | 6. B kendi `kek.bin`'ini açabilir; sonuçlarda gizli değer yok | ✅ Sonuç dosyaları yalnızca SID, kod ve doğru/yanlış içeriyor |
-| 7. Temizlik; hatalar gizlenmez | ⚠️ Kısmen: görev, toplu iş hakkı, kullanıcı ve dosya temizliği doğrulanıyor; ancak ADSI kullanıcı sorgusu her hatayı "kullanıcı yok" sayıyor (düzeltmesi yalnızca PR #13 dalına yönelik #19'da) ve Windows'un yüklü tuttuğu profil hata değil uyarı olarak raporlanıyor |
+| 7. Temizlik; hatalar gizlenmez | ⚠️ Kısmen: PR #27 ile ADSI sorgu/silme hataları ayrıştırılır; yalnızca `NERR_UserNotFound` yok sayılır, diğer hatalar CI'ı kırar (Pester 10/10). Görev, toplu iş hakkı, kullanıcı ve dosya temizliği doğrulanır; Windows'un yüklü tuttuğu profil hâlâ açık uyarıdır. |
 
 **Kabul kapısı:** 2, 5 ve 7. maddeler tam karşılanmadan T-A3-22 CI kabulü tamamlandı sayılmaz. Gerçek Windows 10/11 bilgisayar testi §5'te ayrıca zorunludur.
 

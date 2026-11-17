@@ -2,8 +2,8 @@
 
 > **Tarih:** 2026-11-14
 > **İnceleme tabanı (2026-11-14):** `main` = `7a7742a` (`7a7742a513f577b1925044e7b3b143667cabb6a1`)
-> **Güncelleme (2026-11-15):** `main` artık `77fcc4b` (`77fcc4bd6c84e89bd92fa99f7dbadc4c34445951`; PR #12'nin birleştirme commit'i). Aşağıdaki Dependabot bulguları bu değişiklikten etkilenmez; `7a7742a` ile verilen sayılar 2026-11-14 anlık görüntüsüdür.
-> **Kapsam:** Bu belge PR #1–#5 ve #10'un tarihsel incelemesini korur; aşağıdaki güncel durum bölümü 2026-11-14 itibarıyla kaynak gerçeğidir. Bu PR yalnızca dokümantasyon güncellemesidir; workflow/bağımlılık/kod değişikliği içermez.
+> **Güncelleme (2026-11-17):** `main` artık `ddbe7a2` (`ddbe7a2a1dd131b9c5c73b37c3a2da0f2074e02d`; PR #27'nin birleştirme commit'i). PR #27, ADSI kullanıcı sorgusu/silme hatalarını yalnızca `NERR_UserNotFound` için "kullanıcı yok" sayacak şekilde düzeltti. Main CI (`43716748179`), push CodeQL (`43716748119`) ve zamanlanmış CodeQL (`43857548628`) bu SHA üzerinde başarılıdır. `77fcc4b` ara main anlık görüntüsü olarak korunur.
+> **Kapsam:** Bu belge PR #1–#5 ve #10'un tarihsel incelemesini korur; aşağıdaki güncel durum bölümü 2026-11-17 itibarıyla kaynak gerçeğidir. Bu PR yalnızca dokümantasyon güncellemesidir; workflow/bağımlılık/kod değişikliği içermez.
 > **Kaynaklar:** GitHub PR metadata/patch'leri, commit check-runs, Actions günlükleri, main workflow dosyaları ve K5 ruleset.
 > **Uygulama:** PR #10 (`487a844862dc50db8d03ce13ee3afc9de1b1b954`) birleştirildi; PR #2 ve #5 birleştirilmeden kapatıldı. PR #1, #3 ve #4 de ayrı ayrı birleştirildi.
 
@@ -20,13 +20,13 @@ Bu bölüm, aşağıdaki 2026-11-13 tarihli tarihsel incelemedeki durum tablolar
 | #5 CodeQL analyze v4.39.3 | Birleştirilmeden kapatıldı | — | Yerine #10 geçti | Yerine #10 geçti |
 | #10 CodeQL init + analyze v4.39.3 | Birleştirildi | `487a844862dc50db8d03ce13ee3afc9de1b1b954` | Sonraki main CI başarılı | Sonraki main CodeQL başarılı |
 
-**Main doğrulaması (2026-11-14 anlık görüntüsü):** `7a7742a513f577b1925044e7b3b143667cabb6a1` üzerinde K5'in yedi zorunlu check-run'ı tamamlandı ve başarılı. **2026-11-15 güncel main** `77fcc4bd6c84e89bd92fa99f7dbadc4c34445951` üzerinde de yedi kontrol başarılı (ci çalıştırması `43691582340`, codeql `43691582267`). CodeQL init/analyze aynı SHA (`33d7b85da1a04171e211befe2c739303b9a4c066`, v4.39.3) ile sabit. CI'da checkout v7.0.1, setup-node v7.1.0 ve pnpm/action-setup v6.1.1 SHA ile sabit; Node 22 ve `cache: pnpm` korunuyor.
+**Main doğrulaması (2026-11-17):** `ddbe7a2a1dd131b9c5c73b37c3a2da0f2074e02d` üzerinde K5'in yedi zorunlu kontrolü başarılıdır: CI `43716748179`, push CodeQL `43716748119`; aynı SHA'daki zamanlanmış CodeQL `43857548628` de başarılıdır. CodeQL init/analyze aynı SHA (`33d7b85da1a04171e211befe2c739303b9a4c066`, v4.39.3) ile sabit. CI'da checkout v7.0.1, setup-node v7.1.0 ve pnpm/action-setup v6.1.1 SHA ile sabit; Node 22 ve `cache: pnpm` korunuyor.
 
 **K5 koruması:** Ruleset `27197647` aktif; strict required checks açık, yedi zorunlu kontrol, yalnızca merge yöntemi, bypass aktörü yok. CodeQL güvenlik eşiği medium-or-higher, alert eşiği errors. Kural/ayar gevşetilmedi.
 
-**PR #11 durumu (2026-11-15):** Bu doküman PR'ı (`docs/s3-a3-plan`, bu güncellemeden önceki head `c784381`) güncel main `77fcc4b`'nin 24 commit gerisinde ve 7 commit ilerisindedir (ortak taban `0cd9bec`). 2026-11-14'teki değerler (`main` = `7a7742a`; 8 geride, düzeltmelerden önce 4 ileride) tarihseldir. Sayılar main ilerledikçe değişir; güncel değer PR sayfasındadır.
+**PR #11 durumu (2026-11-17):** Head `c784381` olan `docs/s3-a3-plan` dalı güncel main `ddbe7a2`'nin 27 commit gerisinde ve 7 commit ilerisindedir (ortak taban `0cd9bec`). PR #26 (`fix/pr11-10-belge-guncelleme`, head `48c68be`) bu dala 1 commit ekler ve yalnızca üç Markdown dosyasını değiştirir; ancak belgeler hâlâ `77fcc4b` ara main durumunu anlatır ve PR #27'yi içermediği için güncellenmelidir.
 
-**PR #11 içindeki Markdown dışı dosya:** Bu PR `.gitleaksignore` dosyası da ekler (commit `4b79e52`). Bu belgeler o girdi için verilmiş bir proje sahibi onayını **kaydetmez ve doğrulamaz**; commit mesajındaki "(proje sahibi onayıyla)" ifadesi bu belgede onay kanıtı olarak kabul edilmez. Aynı parmak izi (`d2591873…:apps/agent/test/mvp-app.test.ts:generic-api-key:150`) main'e PR #12 ile (`baddd92`) girmiştir; bunun onayı da bu belgede kayıtlı değildir. Onay kararı proje sahibine aittir. Strict ruleset nedeniyle bu belge commit'leri dalı güncel main'e eşitlemez; PR, main tabanına göre yeniden doğrulanmadan birleştirilemez.
+**PR #11'in merge-base diff'indeki Markdown dışı dosya:** `.gitleaksignore`, PR #11 head `c784381` ve güncel main `ddbe7a2` üzerinde byte-for-byte aynıdır; bu nedenle güncel main'e göre yeni bir ignore girdisi değişikliği değildir. Dosyadaki tek fingerprint (`d2591873…:apps/agent/test/mvp-app.test.ts:generic-api-key:150`) sentetik test yer tutucusu için belgelenmiştir; credential değeri bu belgede yer almaz. Main dosyasındaki yorum proje sahibi onayını 2026-11-14 olarak kaydeder; bu denetim onayı bağımsız olarak doğrulamaz. PR #11'in gerçek yeni içeriği üç Markdown belgesidir. Strict ruleset nedeniyle PR, güncel main tabanına göre yeniden doğrulanmadan birleştirilemez.
 
 **Aşağıdaki bölümler tarihsel analizdir:** PR #1/#3/#4'ün merge öncesi durumu ve PR #10 için öneri, 2026-11-13 anlık görüntüsünü açıklar; artık yapılacak iş olarak okunmamalıdır.
 
