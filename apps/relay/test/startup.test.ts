@@ -583,18 +583,32 @@ describe("relay süreci (giriş noktası, ayrı süreç)", () => {
     }
   });
 
-  it.skipIf(!HAS_PG)("tam açılış, yanlış MFA anahtarıyla yeniden açılış reddi ve SIGTERM ile düzgün kapanma", async () => {
-    const pgx = await startPg();
-    const dir = mkdtempSync(join(tmpdir(), "saklaz-sec-"));
-    try {
+  describe.skipIf(!HAS_PG)("tam açılış ve düzgün kapanma (gerçek PostgreSQL)", () => {
+    // Windows'ta POSIX sinyali süreçler arasında iletilemez (child.kill("SIGTERM") süreci koşulsuz
+    // sonlandırır, işleyici çalışmaz, çıkış kodu null olur). Gerçek SIGTERM testi bu yüzden yalnızca
+    // POSIX'te çalışır; Windows'ta (ve ek olarak POSIX'te de) kapanma IPC ile tetiklenip aynı
+    // işleyiciden geçirilir: test/fixtures/ipc-shutdown.ts.
+    const IS_WINDOWS = process.platform === "win32";
+    const IPC_PRELOAD = pathToFileURL(join(RELAY_DIR, "test", "fixtures", "ipc-shutdown.ts")).href;
+    const IPC_SHUTDOWN_MESSAGE = "saklaz-test:shutdown";
+
+    let pgx: TestPg;
+    let dir: string;
+    let key: string;
+    let env: Record<string, string>;
+    const outputs: string[] = [];
+
+    beforeAll(async () => {
+      pgx = await startPg();
+      dir = mkdtempSync(join(tmpdir(), "saklaz-sec-"));
       const kp = await generateKeyPair("EdDSA", { extractable: true });
       writeFileSync(join(dir, "db"), pgx.url);
       writeFileSync(join(dir, "jwt"), await exportPKCS8(kp.privateKey));
       writeFileSync(join(dir, "jwtpub"), await exportSPKI(kp.publicKey));
-      const key = randomBytes(32).toString("hex");
+      key = randomBytes(32).toString("hex");
       writeFileSync(join(dir, "mfa"), key);
       writeFileSync(join(dir, "mfa-wrong"), randomBytes(32).toString("hex"));
-      const env = {
+      env = {
         SAKLAZ_RELAY_ID: "saklaz-personal",
         SAKLAZ_DATABASE_URL_FILE: join(dir, "db"),
         SAKLAZ_JWT_PRIVATE_KEY_FILE: join(dir, "jwt"),
@@ -603,41 +617,86 @@ describe("relay süreci (giriş noktası, ayrı süreç)", () => {
         SAKLAZ_LISTEN_HOST: "127.0.0.1",
         SAKLAZ_PORT: "0",
       };
-      // migrate komutu: şemayı uygular ve 0 ile çıkar.
-      const m = await runMain(env, ["migrate"]);
-      expect(m.code).toBe(0);
-      expect(m.out).toContain("003_relay_meta.sql");
+    });
 
-      // Sunucu: açılır, dinler; SIGTERM ile düzgün kapanır.
-      const child = spawn(process.execPath, ["--import", "tsx", join(RELAY_DIR, "src", "main.ts")], {
+    afterAll(async () => {
+      // Hiçbir süreç çıktısında gizli değer veya bağlantı adresi bulunmamalı.
+      for (const o of outputs) {
+        expect(o).not.toContain(key);
+        expect(o).not.toContain(pgx.url);
+      }
+      rmSync(dir, { recursive: true, force: true });
+      await pgx.stop();
+    });
+
+    /** `serve` sürecini başlatır ve "relay dinliyor" satırını bekler. ipc: true ise IPC kanalı ve ön yükleme eklenir. */
+    async function serve(ipc: boolean) {
+      const args = ["--import", "tsx", ...(ipc ? ["--import", IPC_PRELOAD] : []), join(RELAY_DIR, "src", "main.ts")];
+      const child = spawn(process.execPath, args, {
         cwd: RELAY_DIR,
         env: { PATH: process.env["PATH"] ?? "", ...env },
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: ipc ? ["ignore", "pipe", "pipe", "ipc"] : ["ignore", "pipe", "pipe"],
       });
       let out = "";
-      child.stdout.on("data", (d: Buffer) => (out += d.toString("utf8")));
-      child.stderr.on("data", (d: Buffer) => (out += d.toString("utf8")));
-      for (let i = 0; i < 100 && !out.includes("relay dinliyor"); i++) await new Promise((r) => setTimeout(r, 100));
-      expect(out).toContain("relay dinliyor");
-      expect(out).toContain('"mfaKeyCheck":"initialized"');
-      const exited = new Promise<number | null>((r) => child.on("exit", (c) => r(c)));
-      child.kill("SIGTERM");
-      expect(await exited).toBe(0);
-      expect(out).toContain("kapandı");
+      child.stdout?.on("data", (d: Buffer) => (out += d.toString("utf8")));
+      child.stderr?.on("data", (d: Buffer) => (out += d.toString("utf8")));
+      const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((r) =>
+        child.on("exit", (code, signal) => r({ code, signal })),
+      );
+      const guard = setTimeout(() => child.kill("SIGKILL"), 30_000);
+      void exited.then(() => clearTimeout(guard));
+      for (let i = 0; i < 150 && !out.includes("relay dinliyor"); i++) await new Promise((r) => setTimeout(r, 100));
+      return { child, exited, out: () => out };
+    }
 
-      // Yanlış MFA anahtarıyla yeniden açılış: başlamaz.
+    it("migrate komutu şemayı uygular ve 0 ile çıkar", async () => {
+      const m = await runMain(env, ["migrate"]);
+      outputs.push(m.out);
+      expect(m.code).toBe(0);
+      expect(m.out).toContain("003_relay_meta.sql");
+    });
+
+    it.skipIf(IS_WINDOWS)("POSIX: gerçek SIGTERM sinyaliyle düzgün kapanma (çıkış kodu 0)", async () => {
+      const s = await serve(false);
+      expect(s.out()).toContain("relay dinliyor");
+      expect(s.out()).toContain('"mfaKeyCheck":"initialized"');
+      expect(s.child.kill("SIGTERM")).toBe(true);
+      const r = await s.exited;
+      outputs.push(s.out());
+      expect(r).toEqual({ code: 0, signal: null });
+      expect(s.out()).toContain('"signal":"SIGTERM"');
+      expect(s.out()).toContain("kapandı");
+    });
+
+    it("tüm platformlar (Windows dahil): IPC ile tetiklenen SIGTERM işleyicisiyle düzgün kapanma (çıkış kodu 0)", async () => {
+      const s = await serve(true);
+      expect(s.out()).toContain("relay dinliyor");
+      // POSIX'te önceki test anahtarı ilk kez kaydetti; Windows'ta bu ilk açılıştır.
+      expect(s.out()).toContain(IS_WINDOWS ? '"mfaKeyCheck":"initialized"' : '"mfaKeyCheck":"verified"');
+      expect(s.child.send(IPC_SHUTDOWN_MESSAGE)).toBe(true);
+      const r = await s.exited;
+      outputs.push(s.out());
+      expect(r).toEqual({ code: 0, signal: null });
+      expect(s.out()).toContain('"signal":"SIGTERM"');
+      expect(s.out()).toContain("kapandı");
+      expect(s.out()).not.toContain("zaman aşımına uğradı");
+    });
+
+    it("yanlış MFA anahtarıyla yeniden açılış: başlamaz", async () => {
       const wrong = await runMain({ ...env, SAKLAZ_MFA_KEY_FILE: join(dir, "mfa-wrong") });
+      outputs.push(wrong.out);
       expect(wrong.code).toBe(1);
       expect(wrong.out).toContain("MFA_KEY_MISMATCH");
       expect(wrong.out).not.toContain("relay dinliyor");
-
-      for (const r of [m, wrong]) {
-        expect(r.out).not.toContain(key);
-        expect(r.out).not.toContain(pgx.url);
-      }
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-      await pgx.stop();
-    }
+    });
   });
+
+  // Linux CI'da PostgreSQL servisi her zaman vardır; gerçek SIGTERM ve PostgreSQL testlerinin sessizce
+  // atlanmasını engeller.
+  it.runIf(process.env["CI"] === "true" && process.platform === "linux")(
+    "Linux CI: PostgreSQL mevcut, gerçek SIGTERM testi atlanmıyor",
+    () => {
+      expect(HAS_PG).toBe(true);
+    },
+  );
 });
