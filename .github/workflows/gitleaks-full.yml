@@ -1,0 +1,55 @@
+# SAKLAZ AI — tam geçmiş gizli bilgi taraması (B2).
+# Tüm dallar, etiketler ve PR kaynak referansları (refs/pull/*/head; açık PR'lar dahil, kapalılar da)
+# haftalık ve elle taranır. PR'larda çalışmaz ve zorunlu kontrol değildir; PR'ları ci.yml'deki
+# "Gizli bilgi taraması (gitleaks)" işi engeller.
+#
+# Güven modeli: zamanlanmış ve elle başlatılan çalıştırmalar varsayılan daldaki bu dosyayla çalışır;
+# bir fork PR'ı bu taramayı değiştiremez. PR kodu çalıştırılmaz ve çalışma ağacına alınmaz:
+# PR referansları yalnızca Git nesnesi olarak çekilir ve çalışma ağacı olmayan bir kopyada taranır.
+# .gitleaksignore yalnızca varsayılan daldan okunur. Kurallar: tools/ci/gitleaks-scan.sh.
+name: gitleaks-full
+
+on:
+  schedule:
+    - cron: "37 1 * * 1" # Pazartesi 01:37 UTC (04:37 TSİ)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gitleaks-full
+  cancel-in-progress: false
+
+jobs:
+  full:
+    name: Gizli bilgi taraması — tam geçmiş (dallar, etiketler, PR referansları)
+    # Elle başlatmada başka bir dal seçilirse o dalın (güvenilmeyen) sürümü çalışmasın.
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          # Sonraki adımda PR referansları da bu salt okunur token ile çekilir; adım sonunda silinir.
+          persist-credentials: true
+      - name: PR kaynak referansları (yalnızca Git nesneleri; kod çalıştırılmaz, çalışma ağacına alınmaz)
+        run: git fetch --no-tags --prune origin '+refs/pull/*/head:refs/remotes/pull/*/head'
+      - name: Kapsam
+        run: |
+          echo "dallar:   $(git for-each-ref refs/remotes/origin --format=x | wc -l)"
+          echo "etiketler: $(git for-each-ref refs/tags --format=x | wc -l)"
+          echo "PR referansları: $(git for-each-ref refs/remotes/pull --format=x | wc -l)"
+      - name: gitleaks 8.28.0 (sağlama toplamı doğrulanmış)
+        run: |
+          mkdir -p "$RUNNER_TEMP/gitleaks"
+          curl -sSL -o "$RUNNER_TEMP/gitleaks/gl.tgz" https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz
+          echo "a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb  $RUNNER_TEMP/gitleaks/gl.tgz" | sha256sum -c -
+          tar xzf "$RUNNER_TEMP/gitleaks/gl.tgz" -C "$RUNNER_TEMP/gitleaks" gitleaks
+      - name: Tarama (--all)
+        env:
+          GITLEAKS_BIN: ${{ runner.temp }}/gitleaks/gitleaks
+          SCAN_MODE: full
+          TRUSTED_REF: refs/remotes/origin/${{ github.event.repository.default_branch }}
+        run: bash tools/ci/gitleaks-scan.sh
