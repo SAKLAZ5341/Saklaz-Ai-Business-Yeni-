@@ -2,12 +2,12 @@
 
 > **Tarih:** 2026-11-14
 > **İnceleme tabanı (2026-11-14):** `main` = `7a7742a` (`7a7742a513f577b1925044e7b3b143667cabb6a1`)
-> **Güncelleme (2026-11-17):** `main` artık `ddbe7a2` (`ddbe7a2a1dd131b9c5c73b37c3a2da0f2074e02d`; PR #27'nin birleştirme commit'i). PR #27, ADSI kullanıcı sorgusu/silme hatalarını yalnızca `NERR_UserNotFound` için "kullanıcı yok" sayacak şekilde düzeltti. Main CI (`43716748179`), push CodeQL (`43716748119`) ve zamanlanmış CodeQL (`43857548628`) bu SHA üzerinde başarılıdır. `77fcc4b` ara main anlık görüntüsü olarak korunur.
-> **Kapsam:** Bu belge PR #1–#5 ve #10'un tarihsel incelemesini korur; aşağıdaki güncel durum bölümü 2026-11-17 itibarıyla kaynak gerçeğidir. Bu PR yalnızca dokümantasyon güncellemesidir; workflow/bağımlılık/kod değişikliği içermez.
+> **Güncelleme (2026-11-20):** Güncel `main` = `9ec0754` (`9ec075475d4c15c6d22c6dd0c6cee0c75f407971`), PR #28 (setup-dart v1.8.2) ve PR #29 (upload-artifact v7.0.2) birleştirmelerinden sonraki head'dir. PR #27'nin ADSI hata ayrımı (`ddbe7a2`) ve PR #12'nin DPAPI/KEK ilk dilimi (`77fcc4b`) main geçmişindedir. Main CI (`44601528990`) altı CI işinin tamamında başarılı; CodeQL (`44601529067`) aynı SHA üzerinde başarılıdır. Windows Server 2022 günlüğü standart ikinci kullanıcı ve gerçek `ProtectedKeyStore` izolasyonunu doğrular.
+> **Kapsam:** Bu belge PR #1–#5 ve #10'un tarihsel incelemesini korur; aşağıdaki güncel durum bölümü 2026-11-20 itibarıyla kaynak gerçeğidir. Bu PR yalnızca dokümantasyon güncellemesidir; workflow/bağımlılık/kod değişikliği içermez.
 > **Kaynaklar:** GitHub PR metadata/patch'leri, commit check-runs, Actions günlükleri, main workflow dosyaları ve K5 ruleset.
 > **Uygulama:** PR #10 (`487a844862dc50db8d03ce13ee3afc9de1b1b954`) birleştirildi; PR #2 ve #5 birleştirilmeden kapatıldı. PR #1, #3 ve #4 de ayrı ayrı birleştirildi.
 
-## Güncel durum (2026-11-14)
+## Güncel durum (2026-11-20)
 
 Bu bölüm, aşağıdaki 2026-11-13 tarihli tarihsel incelemedeki durum tablolarını ve önerilen sırayı geçersiz kılar.
 
@@ -20,13 +20,13 @@ Bu bölüm, aşağıdaki 2026-11-13 tarihli tarihsel incelemedeki durum tablolar
 | #5 CodeQL analyze v4.39.3 | Birleştirilmeden kapatıldı | — | Yerine #10 geçti | Yerine #10 geçti |
 | #10 CodeQL init + analyze v4.39.3 | Birleştirildi | `487a844862dc50db8d03ce13ee3afc9de1b1b954` | Sonraki main CI başarılı | Sonraki main CodeQL başarılı |
 
-**Main doğrulaması (2026-11-17):** `ddbe7a2a1dd131b9c5c73b37c3a2da0f2074e02d` üzerinde K5'in yedi zorunlu kontrolü başarılıdır: CI `43716748179`, push CodeQL `43716748119`; aynı SHA'daki zamanlanmış CodeQL `43857548628` de başarılıdır. CodeQL init/analyze aynı SHA (`33d7b85da1a04171e211befe2c739303b9a4c066`, v4.39.3) ile sabit. CI'da checkout v7.0.1, setup-node v7.1.0 ve pnpm/action-setup v6.1.1 SHA ile sabit; Node 22 ve `cache: pnpm` korunuyor.
+**Main doğrulaması (2026-11-20):** `9ec075475d4c15c6d22c6dd0c6cee0c75f407971` üzerinde Main CI `44601528990` altı CI işinin tamamında, CodeQL `44601529067` ise analiz işinde başarılıdır. Gitleaks 8.28.0 günlüğü 81 commit tarandığını ve bulgu olmadığını bildirir. Windows ajan günlüğünde standart B kullanıcısı (Administrators üyesi değil), ham DPAPI `UNPROTECT_FAILED` ve gerçek `ProtectedKeyStore` çapraz-kullanıcı `BINDING_MISMATCH` sonuçları doğrulanmıştır. Workflow'da checkout v7.0.1, setup-node v7.1.0, pnpm/action-setup v6.1.1, setup-dart v1.8.2 ve upload-artifact v7.0.2 SHA ile sabittir; Node 22.23.5, pnpm 10.28.0 ve `cache: pnpm` korunur.
 
-**K5 koruması:** Ruleset `27197647` aktif; strict required checks açık, yedi zorunlu kontrol, yalnızca merge yöntemi, bypass aktörü yok. CodeQL güvenlik eşiği medium-or-higher, alert eşiği errors. Kural/ayar gevşetilmedi.
+**K5 koruması (önceki doğrulama kaydı):** Ruleset `27197647` için son kayıtlı snapshot strict required checks, yedi zorunlu kontrol, yalnızca merge yöntemi ve bypass aktörü olmadığını bildirir; CodeQL eşiği medium-or-higher, alert eşiği errors olarak kaydedilmiştir. Bu turda kullanılabilir GitHub bağlantısı ruleset okuma uç noktasını sunmadığından bu ayarlar canlı olarak yeniden doğrulanamadı; bu satır 2026-11-20 canlı doğrulaması değildir. Bu denetimde hiçbir kural veya güvenlik ayarı değiştirilmedi.
 
-**PR #11 durumu (2026-11-17):** Head `c784381` olan `docs/s3-a3-plan` dalı güncel main `ddbe7a2`'nin 27 commit gerisinde ve 7 commit ilerisindedir (ortak taban `0cd9bec`). PR #26 (`fix/pr11-10-belge-guncelleme`) yalnızca üç Markdown dosyasını değiştirir; bu güncelleme belgeleri güncel main `ddbe7a2` ve PR #27 ile hizalar. Yeni head üzerindeki CI ve CodeQL tamamlanmadan birleştirme kararı verilemez. PR #11'in kendi dalı main'in 27 commit gerisindedir ve ayrıca güncel tabana göre yeniden doğrulanmalıdır.
+**PR #11 durumu (2026-11-20):** Head `c784381` olan `docs/s3-a3-plan` dalı güncel main `9ec0754`'ün 31 commit gerisinde ve 7 commit ilerisindedir (ortak taban `0cd9bec`; GitHub compare sonucu). PR #26 (`fix/pr11-10-belge-guncelleme`) yalnızca üç Markdown dosyasını değiştirir. Bu belge güncellemesinin yeni head'i üzerinde CI ve CodeQL yeniden tamamlanmalıdır. PR #11'in kendi dalı main'e göre 31 commit geridedir; güncel main tabanına göre yeniden doğrulanmadan birleştirilmemelidir.
 
-**PR #11'in merge-base diff'indeki Markdown dışı dosya:** `.gitleaksignore`, PR #11 head `c784381` ve güncel main `ddbe7a2` üzerinde byte-for-byte aynıdır; bu nedenle güncel main'e göre yeni bir ignore girdisi değişikliği değildir. Dosyadaki tek fingerprint (`d2591873…:apps/agent/test/mvp-app.test.ts:generic-api-key:150`) sentetik test yer tutucusu için belgelenmiştir; credential değeri bu belgede yer almaz. Main dosyasındaki yorum proje sahibi onayını 2026-11-14 olarak kaydeder; bu denetim onayı bağımsız olarak doğrulamaz. PR #11'in gerçek yeni içeriği üç Markdown belgesidir. Strict ruleset nedeniyle PR, güncel main tabanına göre yeniden doğrulanmadan birleştirilemez.
+**PR #11'in merge-base diff'indeki Markdown dışı dosya:** `.gitleaksignore`, PR #11 head `c784381` ve güncel main `9ec0754` üzerinde byte-for-byte aynıdır (aynı blob SHA `bd83c5bf7b4d21e22b84aeb545f13f472a9fd24e`); bu nedenle güncel main'e göre yeni bir ignore girdisi değişikliği değildir. Dosyadaki tek fingerprint sentetik test yer tutucusu için belgelenmiştir; credential değeri bu belgede yer almaz. Main dosyasındaki yorum proje sahibi onayını 2026-11-14 olarak kaydeder; bu denetim onayı bağımsız olarak doğrulamaz. PR #11'in gerçek yeni içeriği üç Markdown belgesidir. Strict ruleset nedeniyle PR, güncel main tabanına göre yeniden doğrulanmadan birleştirilemez.
 
 **Aşağıdaki bölümler tarihsel analizdir:** PR #1/#3/#4'ün merge öncesi durumu ve PR #10 için öneri, 2026-11-13 anlık görüntüsünü açıklar; artık yapılacak iş olarak okunmamalıdır.
 
