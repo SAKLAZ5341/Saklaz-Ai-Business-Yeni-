@@ -17,7 +17,7 @@
     "@saklaz/protocol": "workspace:*",
     "@saklaz/win-keyprotect": "workspace:*",
     "better-sqlite3-multiple-ciphers": "12.11.1",
-    "ws": "8.22.2"
+    "ws": "8.23.0"
   },
   "devDependencies": {
     "@saklaz/testkit": "workspace:*",
