@@ -1,12 +1,13 @@
 # Dependabot PR İncelemesi (#1–#5)
 
 > **Tarih:** 2026-11-14
-> **Güncel taban:** `main` = `7a7742a` (`7a7742a513f577b1925044e7b3b143667cabb6a1`)
-> **Kapsam:** Bu belge PR #1–#5 ve #10'un tarihsel incelemesini korur; aşağıdaki güncel durum bölümü 2026-11-14 itibarıyla kaynak gerçeğidir. Bu PR yalnızca dokümantasyon güncellemesidir; workflow/bağımlılık/kod değişikliği içermez.
+> **İnceleme tabanı (2026-11-14):** `main` = `7a7742a` (`7a7742a513f577b1925044e7b3b143667cabb6a1`)
+> **Güncelleme (2026-11-20):** Güncel `main` = `9ec0754` (`9ec075475d4c15c6d22c6dd0c6cee0c75f407971`), PR #28 (setup-dart v1.8.2) ve PR #29 (upload-artifact v7.0.2) birleştirmelerinden sonraki head'dir. PR #27'nin ADSI hata ayrımı (`ddbe7a2`) ve PR #12'nin DPAPI/KEK ilk dilimi (`77fcc4b`) main geçmişindedir. Main CI (`44601528990`) altı CI işinin tamamında başarılı; CodeQL (`44601529067`) aynı SHA üzerinde başarılıdır. Windows Server 2022 günlüğü standart ikinci kullanıcı ve gerçek `ProtectedKeyStore` izolasyonunu doğrular.
+> **Kapsam:** Bu belge PR #1–#5 ve #10'un tarihsel incelemesini korur; aşağıdaki güncel durum bölümü 2026-11-20 itibarıyla kaynak gerçeğidir. Bu PR yalnızca dokümantasyon güncellemesidir; workflow/bağımlılık/kod değişikliği içermez.
 > **Kaynaklar:** GitHub PR metadata/patch'leri, commit check-runs, Actions günlükleri, main workflow dosyaları ve K5 ruleset.
 > **Uygulama:** PR #10 (`487a844862dc50db8d03ce13ee3afc9de1b1b954`) birleştirildi; PR #2 ve #5 birleştirilmeden kapatıldı. PR #1, #3 ve #4 de ayrı ayrı birleştirildi.
 
-## Güncel durum (2026-11-14)
+## Güncel durum (2026-11-20)
 
 Bu bölüm, aşağıdaki 2026-11-13 tarihli tarihsel incelemedeki durum tablolarını ve önerilen sırayı geçersiz kılar.
 
@@ -19,11 +20,13 @@ Bu bölüm, aşağıdaki 2026-11-13 tarihli tarihsel incelemedeki durum tablolar
 | #5 CodeQL analyze v4.39.3 | Birleştirilmeden kapatıldı | — | Yerine #10 geçti | Yerine #10 geçti |
 | #10 CodeQL init + analyze v4.39.3 | Birleştirildi | `487a844862dc50db8d03ce13ee3afc9de1b1b954` | Sonraki main CI başarılı | Sonraki main CodeQL başarılı |
 
-**Güncel main doğrulaması:** `7a7742a513f577b1925044e7b3b143667cabb6a1` üzerinde K5'in yedi zorunlu check-run'ı tamamlandı ve başarılı. CodeQL init/analyze aynı SHA (`33d7b85da1a04171e211befe2c739303b9a4c066`, v4.39.3) ile sabit. CI'da checkout v7.0.1, setup-node v7.1.0 ve pnpm/action-setup v6.1.1 SHA ile sabit; Node 22 ve `cache: pnpm` korunuyor.
+**Main doğrulaması (2026-11-20):** `9ec075475d4c15c6d22c6dd0c6cee0c75f407971` üzerinde Main CI `44601528990` altı CI işinin tamamında, CodeQL `44601529067` ise analiz işinde başarılıdır. Gitleaks 8.28.0 günlüğü 81 commit tarandığını ve bulgu olmadığını bildirir. Windows ajan günlüğünde standart B kullanıcısı (Administrators üyesi değil), ham DPAPI `UNPROTECT_FAILED` ve gerçek `ProtectedKeyStore` çapraz-kullanıcı `BINDING_MISMATCH` sonuçları doğrulanmıştır. Workflow'da checkout v7.0.1, setup-node v7.1.0, pnpm/action-setup v6.1.1, setup-dart v1.8.2 ve upload-artifact v7.0.2 SHA ile sabittir; Node 22.23.5, pnpm 10.28.0 ve `cache: pnpm` korunur.
 
-**K5 koruması:** Ruleset `27197647` aktif; strict required checks açık, yedi zorunlu kontrol, yalnızca merge yöntemi, bypass aktörü yok. CodeQL güvenlik eşiği medium-or-higher, alert eşiği errors. Kural/ayar gevşetilmedi.
+**K5 koruması (2026-11-20 canlı Ruleset API):** Ruleset `27197647` aktiftir ve yalnızca `refs/heads/main` dalına uygulanır. Strict required checks açık; yedi zorunlu bağlam: TypeScript, Windows kripto/ajan, Dart, Windows Pester, Gitleaks, Docker/Compose ve CodeQL. Yalnızca `merge` yöntemi izinlidir; bypass aktörü yoktur ve `current_user_can_bypass=never`. CodeQL eşikleri `medium_or_higher` / `errors` olarak doğrulandı. Ruleset `required_approving_review_count=0`, CODEOWNERS incelemesi kapalı ve review-thread çözümü zorunlu değildir; bu nedenle workflow/Gitleaks dosyalarını değiştiren PR'larda insan onayı güvenlik sınırı ayrıca ele alınmalıdır. Klasik branch-protection endpoint'i bu bağlantıda 403 verdi; bu nedenle K5 dışındaki korumalar doğrulanamadı. Bu denetimde hiçbir kural veya güvenlik ayarı değiştirilmedi.
 
-**PR #11 durumu (2026-11-14):** Bu doküman PR'ı (`docs/s3-a3-plan`) main'in 8 commit gerisinde ve bu düzeltmelerden önce 4 commit ilerideydi (`main` = `7a7742a`, ortak taban `0cd9bec`). Sayılar main ilerledikçe değişir; güncel değer PR sayfasındadır. Strict ruleset nedeniyle bu belge commit'leri dalı güncel main'e eşitlemez; PR, main tabanına göre yeniden doğrulanmadan birleştirilemez.
+**PR #11 durumu (2026-11-20):** Head `c784381` olan `docs/s3-a3-plan` dalı güncel main `9ec0754`'ün 31 commit gerisinde ve 7 commit ilerisindedir (ortak taban `0cd9bec`; GitHub compare sonucu). PR #26 (`fix/pr11-10-belge-guncelleme`) yalnızca üç Markdown dosyasını değiştirir. Bu belge güncellemesinin yeni head'i üzerinde CI ve CodeQL yeniden tamamlanmalıdır. PR #11'in kendi dalı main'e göre 31 commit geridedir; güncel main tabanına göre yeniden doğrulanmadan birleştirilmemelidir.
+
+**PR #11'in merge-base diff'indeki Markdown dışı dosya:** `.gitleaksignore`, PR #11 head `c784381` ve güncel main `9ec0754` üzerinde byte-for-byte aynıdır (aynı blob SHA `bd83c5bf7b4d21e22b84aeb545f13f472a9fd24e`); bu nedenle güncel main'e göre yeni bir ignore girdisi değişikliği değildir. Dosyadaki tek fingerprint sentetik test yer tutucusu için belgelenmiştir; credential değeri bu belgede yer almaz. Main dosyasındaki yorum proje sahibi onayını 2026-11-14 olarak kaydeder; bu denetim onayı bağımsız olarak doğrulamaz. PR #11'in gerçek yeni içeriği üç Markdown belgesidir. Strict ruleset nedeniyle PR, güncel main tabanına göre yeniden doğrulanmadan birleştirilemez.
 
 **Aşağıdaki bölümler tarihsel analizdir:** PR #1/#3/#4'ün merge öncesi durumu ve PR #10 için öneri, 2026-11-13 anlık görüntüsünü açıklar; artık yapılacak iş olarak okunmamalıdır.
 

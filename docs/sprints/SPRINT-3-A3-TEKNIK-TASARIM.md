@@ -1,9 +1,9 @@
 # Sprint 3 / A3 — Kasa v2 ve Windows DPAPI: Teknik Tasarım
 
 > **Tarih:** 2026-11-14
-> **Durum:** Tasarım belgesi. A3'ün DPAPI/KEK ilk dilimi PR #12'de uygulanmıştır (açık, henüz main'e birleştirilmemiş); tam `vault.bin` v2 uygulaması tamamlanmış değildir.
+> **Durum:** Tasarım belgesi. A3'ün DPAPI/KEK ilk dilimi PR #12 ile (2026-11-15, `77fcc4b`) ve ADSI temizleme hata ayrımı PR #27 ile (2026-11-15, `ddbe7a2`) main'e birleştirilmiştir. Main head, PR #28 ve #29'un bağımlılık/workflow güncellemeleri sonrasında `9ec0754`'tür; tam `vault.bin` v2 uygulaması tamamlanmış değildir.
 > **Esas:** `docs/sprints/SPRINT-3-PLAN.md` §2 A3; K2 ve K3 kararları (§8).
-> **Güncel main tabanı:** `7a7742a513f577b1925044e7b3b143667cabb6a1`
+> **Güncel main:** `9ec075475d4c15c6d22c6dd0c6cee0c75f407971` (2026-11-19; PR #28 ve #29 birleştirmeleri). PR #12'nin ara main SHA'sı `77fcc4b`, PR #27'nin merge SHA'sı `ddbe7a2` olarak tarihsel kayıtta korunur.
 > **Dil kuralı:** Bu belgedeki güvenlik ifadeleri `SECURITY.md` §0 varsayımlarına bağlıdır; hiçbiri mutlak değildir.
 
 ## 0. Bağlayıcı kurallar
@@ -27,12 +27,17 @@
 
 **Tasarım ilkesi:** `SecretVault` arayüzü **değişmez.** Yeni kasa, aynı arayüzün üçüncü bir uygulamasıdır. Çekirdek, veritabanı ve rollback kodunda değişiklik gerekmez; yalnızca kasayı oluşturan fabrika fonksiyonu eklenir.
 
-## 1.1 A3 uygulama durumu (2026-11-14)
+## 1.1 A3 uygulama durumu (2026-11-20)
 
-- PR #12 (`feat/a3-dpapi-keyprotector`, head `fa043bc`) main tabanı `7a7742a` üzerine açılmıştır; açık ve birleştirilmemiştir. PR kontrolleri 8/8 başarılıdır; Windows Server 2022 işinde gerçek DPAPI koruma/çözme ve ikinci kullanıcıyla ham blob izolasyonu gerçekten çalışmıştır.
+- PR #12 (`feat/a3-dpapi-keyprotector`, son head `1ec579e`) **2026-11-15'te main'e birleştirildi** (birleştirme commit'i `77fcc4b`). Güncel main `9ec0754` üzerinde CI `44601528990` ve CodeQL `44601529067` başarılıdır. Windows Server 2022 günlüğü gerçek DPAPI koruma/çözme, standart ikinci kullanıcı ve gerçek `ProtectedKeyStore` (`kek.bin`) izolasyonunu doğrular: ham blob için `UNPROTECT_FAILED`, gerçek kasa dosyası için `BINDING_MISMATCH`. Gitleaks 8.28.0 aynı main CI'da 81 commit tarayıp bulgu bildirmemiştir.
 - PR #12'nin mevcut dilimi `@saklaz/win-keyprotect` N-API modülünü, `DpapiUserProtector` ve `ProtectedKeyStore` SKK1 biçimindeki `kek.bin` dosyasını içerir. Bu, tasarımın tam `vault.bin` v2 / `FileVaultV2` / üretim fabrikası / geçiş / atomik kasa yazımı kapsamının tamamlandığı anlamına gelmez.
-- **Açık güvenlik engelleri:** `tools/ci/dpapi-second-user.ps1` kullanıcı B'yi Administrators grubuna ekliyor ve `/rl highest` kullanıyor; parola `net user` ve `schtasks /rp` süreç argümanlarına veriliyor. Test yalnızca ham DPAPI blob'unu sınar; gerçek `ProtectedKeyStore` dosyasını açmaz. `wrapNative().unprotect()` sonucu yeni `Uint8Array`'e kopyalanırken orijinal Node Buffer sıfırlanmıyor.
-- PR #13 (`feat/mvp-alpha`) Draft durumundadır ve PR #12'ye bağımlıdır; A3 güvenlik kabulü yerine geçmez.
+- **2026-11-14'te açık olan güvenlik engelleri — main'deki durum (2026-11-15):**
+  - B kullanıcısı Administrators grubuna ekleniyordu ve görev `/rl highest` ile çalışıyordu → **giderildi:** B standart kullanıcı (yalnızca Users; üyelik denetleniyor), görev `RunLevel Limited`.
+  - Parola `net user` / `schtasks /rp` argümanlarındaydı → **giderildi:** kullanıcı ADSI, görev `Register-ScheduledTask` ile süreç içinde oluşturuluyor; parola hiçbir alt sürecin komut satırına yazılmıyor. Not: parola `SecureString` değil, betik belleğinde düz dizge olarak tutulup kullanımdan sonra `$null` yapılıyor.
+  - Test yalnızca ham blob'u sınıyordu → **giderildi:** gerçek `ProtectedKeyStore` (`kek.bin`) alt testi eklendi; B için `BINDING_MISMATCH`, ham blob için `UNPROTECT_FAILED`.
+  - `wrapNative().unprotect()` kaynak tamponu sıfırlamıyordu → **giderildi:** kopyalandıktan sonra sıfırlanıyor (birim testli).
+- **ADSI hata ayrımı — PR #27 ile main'de düzeltildi (2026-11-15, `ddbe7a2`):** yalnızca `NERR_UserNotFound` "kullanıcı yok" kabul edilir; erişim reddi, RPC ve diğer COM/dış hatalar gerçek hata olarak yükseltilir. Main Windows ajan işinde `AdsiUser.Tests.ps1` için Pester 5.7.1 ile 10/10 test geçmiştir; ayrı Windows envanter Pester işi 8/8 geçmiştir. Geçici kullanıcının profili Windows tarafından yüklü tutulduğunda hâlâ açık uyarı verilir.
+- PR #13 (`feat/mvp-alpha`) Draft durumundadır; head `f10aaea`, 77 değişen dosya, güncel main `9ec0754`'e göre 8 commit ileride ve 15 commit geridedir (GitHub compare). PR #17–#22 hâlâ `feat/mvp-alpha` dalını hedefler ve PR #13 head'ine entegre edilmiş değildir. PR #13'ün kendi Windows CI işi (`43633691279`) yalnızca ham DPAPI blob izolasyonunu çalıştırmıştır; bu dalın betiği B kullanıcısını Administrators grubuna ekler, `/rl highest` ve `schtasks /rp` kullanır, gerçek `ProtectedKeyStore` testini içermez. Main'deki güncel standart kullanıcı + gerçek `kek.bin` doğrulaması PR #13'ün eski dalındaki testi geçerli kılmaz. PR #19'daki ADSI hata ayrımının eşdeğeri PR #27 ile main'e alınmıştır; PR #13 güncel main'e göre yeniden doğrulanmalıdır. A3 güvenlik kabulü yerine geçmez.
 - Bu belge tasarım hedeflerini korur. PR #12'nin ilk dilimi, tam kasa v2'nin tamamlandığı veya A3 kabul testlerinin geçtiği şeklinde raporlanmamalıdır.
 
 ## 2. Mimari
