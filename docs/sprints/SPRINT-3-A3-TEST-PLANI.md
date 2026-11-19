@@ -1,12 +1,12 @@
 # Sprint 3 / A3 — Kasa v2 ve DPAPI: Test Planı
 
 > **Tarih:** 2026-11-14
-> **Durum:** Tam A3 test planı; DPAPI/KEK ilk dilimi PR #12 (`77fcc4b`) ve ADSI hata ayrımı PR #27 (`ddbe7a2`) ile main'e birleştirilmiştir. Tüm A3 testleri tamamlanmış sayılmaz.
+> **Durum:** Tam A3 test planı; DPAPI/KEK ilk dilimi PR #12 (`77fcc4b`) ve ADSI hata ayrımı PR #27 (`ddbe7a2`) ile main'e birleştirilmiştir. Main head PR #28/#29 sonrası `9ec0754`'tür. Tüm A3 testleri tamamlanmış sayılmaz.
 > **Bağlı belge:** SPRINT-3-A3-TEKNIK-TASARIM.md
 
-## 0.1 Uygulama ve doğrulama durumu (2026-11-17)
+## 0.1 Uygulama ve doğrulama durumu (2026-11-20)
 
-- PR #12 2026-11-15'te main'e birleştirildi (`77fcc4b`). Güncel main `ddbe7a2` için CI `43716748179`, push CodeQL `43716748119` ve zamanlanmış CodeQL `43857548628` başarılıdır. Windows Server 2022 işinde gerçek DPAPI modülü, standart ikinci kullanıcı ve gerçek `ProtectedKeyStore` (`kek.bin`) çapraz-kullanıcı testi çalışır.
+- PR #12 2026-11-15'te main'e birleştirildi (`77fcc4b`). Güncel main `9ec0754` için CI `44601528990` (6/6 iş) ve CodeQL `44601529067` başarılıdır. Windows Server 2022 iş günlüğü standart ikinci kullanıcı ve gerçek `ProtectedKeyStore` (`kek.bin`) çapraz-kullanıcı testini doğrular.
 - **T-A3-22, main'deki betikle (`tools/ci/dpapi-second-user.ps1`):** B **standart** kullanıcı (Administrators üyesi değil; denetleniyor), görev `RunLevel Limited`, parola hiçbir alt sürecin komut satırına yazılmıyor. Main CI günlüğü:
   - T-A3-22a ham blob: `B, A'nınkini çözebildi mi: False (kod: UNPROTECT_FAILED); B kendi blob'unda: True`
   - T-A3-22b ProtectedKeyStore: `B, A'nın kek.bin'ini açabildi mi: False (kod: BINDING_MISMATCH); B kendi kek.bin'inde: True`
@@ -15,7 +15,7 @@
 
 ## 1. İlkeler
 
-- Mevcut hiçbir test silinmez, atlanmaz veya gevşetilmez; kapsama eşikleri düşürülmez. Güncel main `ddbe7a2` CI `43716748179` üzerinde Linux'ta 228 test geçer (14 Windows'a özgü test atlanır), Windows'ta 183 test geçer (2 atlanır), Docker'da 13, Dart'ta 7, Windows envanter Pester işinde 8 ve DPAPI/ADSI adımında 10 test geçer. ADSI 10/10 testleri `tools/ci/dpapi-second-user.ps1` içinde, zorunlu Windows ajan işinde çalışır; ayrı Pester işi yalnızca envanter testlerini (8/8) çalıştırır. 2026-11-14 `7a7742a` sayıları tarihsel tabandır: Linux 205, Windows 148.
+- Mevcut hiçbir test silinmez, atlanmaz veya gevşetilmez; kapsama eşikleri düşürülmez. Main CI `44601528990` üzerinde altı CI işi tamamlanmış ve başarılı, CodeQL `44601529067` başarılıdır. Aşağıdaki ayrıntılı test sayıları 2026-11-17 tarihli `ddbe7a2` koşusunun tarihsel ölçümüdür; bu denetimde yeni main koşusu için test toplamları yeniden sayılmadığından güncel sayı olarak sunulmaz. ADSI sınıflandırma testleri main Windows ajan işinde Pester ile 10/10; ayrı Windows envanter Pester işi 8/8 olarak doğrulanmıştır.
 - Kasa mantığı (dosya biçimi, AAD, atomik yazım, hata kodları) **Linux'ta da** test edilir. Bunun için yalnızca testte kullanılan bir `FakeProtector` vardır; böylece kapsama ölçümü eksik kalmaz.
 - Gerçek DPAPI ve yerel modül testleri yalnızca Windows'ta koşar. Windows CI'da bu testlerin **gerçekten koştuğu doğrulanır**: win32'de yerel modül yüklenemiyorsa test kırmızı olur, sessizce atlanmaz.
 - Her negatif test, hata kodunu ve **gizli değerin hiçbir çıktıda bulunmadığını** birlikte doğrular.
@@ -127,7 +127,7 @@ GitHub'ın Windows sanal makinesi geçicidir ve iş yönetici olarak çalışır
 6. B kendi `kek.bin` dosyasını başarıyla açabilmelidir. Hiçbir sonuç dosyası KEK, blob veya düz metin içermemelidir.
 7. Geçici görev/süreç, kullanıcı ve klasör temizlenir; temizlik hataları gizlenmez.
 
-**Main'deki durum (2026-11-17, `ddbe7a2`):**
+**Main'deki durum (2026-11-20, `9ec0754`; CI `44601528990`):**
 
 | Madde | Durum |
 |---|---|
